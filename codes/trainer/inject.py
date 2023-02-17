@@ -3,6 +3,7 @@ import inspect
 import pkgutil
 import re
 import sys
+import os
 
 import torch.nn
 
@@ -33,7 +34,8 @@ def format_injector_name(name):
 # Works by loading all python modules in the injectors/ directory and sniffing out subclasses of Injector.
 # field will be properly populated.
 def find_registered_injectors(base_path="trainer/injectors"):
-    module_iter = pkgutil.walk_packages([base_path])
+    path = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), f'../{base_path}'))
+    module_iter = pkgutil.walk_packages([path])
     results = {}
     for mod in module_iter:
         if mod.ispkg:

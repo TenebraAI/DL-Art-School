@@ -30,14 +30,12 @@ def register_model(func):
     func._dlas_registered_model = True
     return func
 
-
 def find_registered_model_fns(base_path='models'):
     found_fns = {}
-    module_iter = pkgutil.walk_packages([base_path])
+    path = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), f'../{base_path}'))
+
+    module_iter = pkgutil.walk_packages([path])
     for mod in module_iter:
-        if os.name == 'nt':
-            if os.path.join(os.getcwd(), base_path) not in mod.module_finder.path:
-                continue   # I have no idea why this is necessary - I think it's a bug in the latest PyWindows release.
         if mod.ispkg:
             EXCLUSION_LIST = ['flownet2']
             if mod.name not in EXCLUSION_LIST:
