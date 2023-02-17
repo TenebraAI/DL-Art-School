@@ -1,12 +1,13 @@
-experiments/*
+dlas/experiments/*
+dlas/codes/*.txt
+dlas/codes/wandb/*
+dlas/codes/pretrained_models/*
+dlas/codes/scripts/audio/pretrained_models/*
+
 results/*
 tb_logger/*
 datasets/*
 options/*
-codes/*.txt
-codes/wandb/*
-codes/pretrained_models/*
-codes/scripts/audio/pretrained_models/*
 data/*
 .vscode
 
