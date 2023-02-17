@@ -34,6 +34,7 @@ def format_injector_name(name):
 # Works by loading all python modules in the injectors/ directory and sniffing out subclasses of Injector.
 # field will be properly populated.
 def find_registered_injectors(base_path="trainer/injectors"):
+    # this has the same modification networks.py has, so be sure to mirror it
     path = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), f'../{base_path}'))
     module_iter = pkgutil.walk_packages([path])
     results = {}

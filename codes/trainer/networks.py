@@ -30,6 +30,12 @@ def register_model(func):
     func._dlas_registered_model = True
     return func
 
+# this had some weird kludge that I don't understand needing to have a reference frame around the current working directory
+# it works better when you set it relative to this file instead
+# however, this has very different behavior when importing DLAS from outside the repo, rather than spawning a shell instance to a script within it
+# I can't be assed to deal with that headache at the moment, I just want something to work right now without needing to touch a shell
+
+# inject.py has a similar loader scheme, be sure to mirror it if you touch this too
 def find_registered_model_fns(base_path='models'):
     found_fns = {}
     path = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), f'../{base_path}'))
