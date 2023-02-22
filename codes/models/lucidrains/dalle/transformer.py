@@ -11,6 +11,7 @@ from models.lucidrains.dalle.attention import Attention, SparseAttention, Sparse
 
 from rotary_embedding_torch import RotaryEmbedding, broadcat
 from g_mlp_pytorch import gMLPBlock
+import bitsandbytes as bnb
 
 # helpers
 
@@ -78,10 +79,10 @@ class FeedForward(nn.Module):
     def __init__(self, dim, dropout = 0., mult = 4.):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(dim, dim * mult * 2),
+            bnb.nn.Linear8bitLt(dim, dim * mult * 2),
             GEGLU(),
             nn.Dropout(dropout),
-            nn.Linear(dim * mult, dim)
+            bnb.nn.Linear8bitLt(dim * mult, dim)
         )
 
     def forward(self, x):

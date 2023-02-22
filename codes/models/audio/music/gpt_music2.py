@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from transformers import GPT2Config, GPT2Model
+import bitsandbytes as bnb
 
 from models.arch_util import AttentionBlock, ResBlock
 from models.audio.tts.lucidrains_dvae import DiscreteVAE
@@ -73,8 +74,9 @@ class GptMusicLower(nn.Module):
         self.gpt = GPT2Model(self.config)
         del self.gpt.wte  # Unused, we'll do our own embeddings.
 
-        self.embeddings = nn.ModuleList([nn.Embedding(num_target_vectors, dim // num_vaes) for _ in range(num_vaes)])
-        self.heads = nn.ModuleList([nn.Linear(dim, num_target_vectors) for _ in range(num_vaes)])
+        # nn.Embedding
+        self.embeddings = nn.ModuleList([bnb.nn.StableEmbedding(num_target_vectors, dim // num_vaes) for _ in range(num_vaes)])
+        self.heads = nn.ModuleList([bnb.nn.Linear8bitLt(dim, num_target_vectors) for _ in range(num_vaes)])
 
     def forward(self, mel, return_latent=False):
         unused_params = []
