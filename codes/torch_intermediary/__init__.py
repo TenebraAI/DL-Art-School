@@ -13,8 +13,8 @@ from torch.optim.adamw import AdamW
 
 OVERRIDE_LINEAR = False
 OVERRIDE_EMBEDDING = False
-OVERRIDE_ADAM = True
-OVERRIDE_ADAMW = True
+OVERRIDE_ADAM = False # True
+OVERRIDE_ADAMW = False # True
 USE_STABLE_EMBEDDING = True
 
 if OVERRIDE_LINEAR:

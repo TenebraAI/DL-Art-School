@@ -1,3 +1,14 @@
+# (QoL improvements for) Deep Learning Art School
+
+This fork of [neonbjb/DL-Art-School](https://github.com/neonbjb/DL-Art-School/) contains a few fixes and QoL improvements, including but not limited to:
+* sanity tidying, like:
+	- not outputing to `./DL-Art-School/experiments/`
+	- the custom module loader for networks/injectors getting fixed
+	- BitsAndBytes integration:
+		+ working but output untested: Adam/AdamW
+		+ toggles available in `./codes/torch_indermediary/__init__.py`
+
+---
 # Deep Learning Art School
 
 Send your Pytorch model to art class!

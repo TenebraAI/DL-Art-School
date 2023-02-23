@@ -258,7 +258,7 @@ class Trainer:
             self.logger.info(message)
 
         #### save models and training states
-        if self.current_step % opt['logger']['save_checkpoint_freq'] == 0:
+        if self.current_step > 0 and self.current_step % opt['logger']['save_checkpoint_freq'] == 0:
             self.model.consolidate_state()
             if self.rank <= 0:
                 self.logger.info('Saving models and training states.')
