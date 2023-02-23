@@ -110,11 +110,13 @@ def get_compute_capability(cuda):
 
 
 def evaluate_cuda_setup():
+    """
     print('')
     print('='*35 + 'BUG REPORT' + '='*35)
     print('Welcome to bitsandbytes. For bug reports, please submit your error trace to: https://github.com/TimDettmers/bitsandbytes/issues')
     print('For effortless bug reporting copy-paste your error into this form: https://docs.google.com/forms/d/e/1FAIpQLScPB8emS3Thkp66nvqwmjTEgxp8Y9ufuWTzFyr9kJ5AoI47dQ/viewform?usp=sf_link')
     print('='*80)
+    """
     return "libbitsandbytes_cuda116.dll"            # $$$
     
     binary_name = "libbitsandbytes_cpu.so"
