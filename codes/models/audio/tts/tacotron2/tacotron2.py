@@ -8,7 +8,7 @@ from models.audio.tts.tacotron2.layers import ConvNorm, LinearNorm
 from models.audio.tts.tacotron2.hparams import create_hparams
 from trainer.networks import register_model
 from models.audio.tts.tacotron2.taco_utils import get_mask_from_lengths
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 
 class LocationLayer(nn.Module):
@@ -465,7 +465,7 @@ class Tacotron2(nn.Module):
         self.n_mel_channels = hparams.n_mel_channels
         self.n_frames_per_step = hparams.n_frames_per_step
         # nn.Embedding
-        self.embedding = bnb.nn.StableEmbedding(
+        self.embedding = ml.Embedding(
             hparams.n_symbols, hparams.symbols_embedding_dim)
         std = sqrt(2.0 / (hparams.n_symbols + hparams.symbols_embedding_dim))
         val = sqrt(3.0) * std  # uniform bounds for std

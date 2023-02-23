@@ -7,7 +7,7 @@ import torch.nn as nn
 import trainer.networks as networks
 import trainer.lr_scheduler as lr_scheduler
 from .base_model import BaseModel
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 logger = logging.getLogger('base')
 
@@ -43,7 +43,7 @@ class FeatureModel(BaseModel):
                     if self.rank <= 0:
                         logger.warning('Params [{:s}] will not optimize.'.format(k))
             # torch.optim.Adam
-            self.optimizer_G = bnb.optim.Adam8bit(optim_params, lr=train_opt['lr_G'],
+            self.optimizer_G = ml.Adam(optim_params, lr=train_opt['lr_G'],
                                                 weight_decay=wd_G,
                                                 betas=(train_opt['beta1_G'], train_opt['beta2_G']))
             self.optimizers.append(self.optimizer_G)

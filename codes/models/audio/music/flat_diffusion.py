@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import autocast
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 from models.arch_util import ResBlock
 from models.diffusion.nn import timestep_embedding, normalization, zero_module, conv_nd, linear
@@ -24,7 +24,7 @@ class MultiGroupEmbedding(nn.Module):
     def __init__(self, tokens, groups, dim):
         super().__init__()
         # nn.Embedding
-        self.m = nn.ModuleList([bnb.nn.StableEmbedding(tokens, dim // groups) for _ in range(groups)])
+        self.m = nn.ModuleList([ml.Embedding(tokens, dim // groups) for _ in range(groups)])
 
     def forward(self, x):
         h = [embedding(x[:, :, i]) for i, embedding in enumerate(self.m)]
@@ -161,7 +161,7 @@ class FlatDiffusion(nn.Module):
         # transformer network.
         if in_groups is None:
             # nn.Embedding
-            self.embeddings = bnb.nn.StableEmbedding(token_count, model_channels)
+            self.embeddings = ml.Embedding(token_count, model_channels)
         else:
             self.embeddings = MultiGroupEmbedding(token_count, in_groups, model_channels)
         self.latent_conditioner = nn.Sequential(

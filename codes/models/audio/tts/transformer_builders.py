@@ -25,7 +25,7 @@ import random
 from time import time
 import torch
 import torch.nn as nn
-import bitsandbytes as bnb
+import torch_intermediary as ml
 from tqdm import tqdm
 
 
@@ -37,7 +37,7 @@ class LearnedPositionEmbeddings(nn.Module):
     def __init__(self, seq_len, model_dim, init=.02, relative=False):
         super().__init__()
         # nn.Embedding
-        self.emb = bnb.nn.StableEmbedding(seq_len, model_dim)
+        self.emb = ml.Embedding(seq_len, model_dim)
         # Initializing this way is standard for GPT-2
         self.emb.weight.data.normal_(mean=0.0, std=init)
         self.relative = relative

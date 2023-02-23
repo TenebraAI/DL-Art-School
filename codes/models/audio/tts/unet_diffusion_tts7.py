@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import autocast
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 from models.diffusion.nn import timestep_embedding, normalization, zero_module, conv_nd, linear
 from models.diffusion.unet_diffusion import AttentionBlock, TimestepEmbedSequential, \
@@ -249,7 +249,7 @@ class DiffusionTts(nn.Module):
 
         embedding_dim = model_channels * 8
         # nn.Embedding
-        self.code_embedding = bnb.nn.StableEmbedding(num_tokens+1, embedding_dim)
+        self.code_embedding = ml.Embedding(num_tokens+1, embedding_dim)
         self.contextual_embedder = AudioMiniEncoder(1, embedding_dim, base_channels=32, depth=6, resnet_blocks=1,
                          attn_blocks=2, num_attn_heads=2, dropout=dropout, downsample_factor=4, kernel_size=5)
         self.conditioning_conv = nn.Conv1d(embedding_dim*3, embedding_dim, 1)
@@ -257,7 +257,7 @@ class DiffusionTts(nn.Module):
         self.enable_unaligned_inputs = enabled_unaligned_inputs
         if enabled_unaligned_inputs:
             # nn.Embedding
-            self.unaligned_embedder = bnb.nn.StableEmbedding(num_unaligned_tokens, embedding_dim)
+            self.unaligned_embedder = ml.Embedding(num_unaligned_tokens, embedding_dim)
             self.unaligned_encoder = CheckpointedXTransformerEncoder(
                 max_seq_len=-1,
                 use_pos_emb=False,

@@ -26,7 +26,7 @@ from models.diffusion.nn import (
 )
 from trainer.networks import register_model
 from utils.util import checkpoint
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 
 class AttentionPool2d(nn.Module):
@@ -478,7 +478,7 @@ class UNetModel(nn.Module):
 
         if self.num_classes is not None:
             # nn.Embedding
-            self.label_emb = bnb.nn.StableEmbedding(num_classes, time_embed_dim)
+            self.label_emb = ml.Embedding(num_classes, time_embed_dim)
 
         self.input_blocks = nn.ModuleList(
             [
@@ -738,7 +738,7 @@ class ResNetEncoder(nn.Module):
                                            dilate=replace_stride_with_dilation[2])
             f=512
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = bnb.nn.Linear8bitLt(f * block.expansion, output_dim)
+        self.fc = ml.Linear(f * block.expansion, output_dim)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):

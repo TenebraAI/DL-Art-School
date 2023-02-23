@@ -3,7 +3,7 @@ from collections import Counter
 from collections import defaultdict
 import torch
 from torch.optim.lr_scheduler import _LRScheduler
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 from utils.util import opt_get
 
@@ -137,7 +137,7 @@ class CosineAnnealingLR_Restart(_LRScheduler):
 
 if __name__ == "__main__":
     #torch.optim.Adam
-    optimizer = bnb.optim.Adam8bit([torch.zeros(3, 64, 3, 3)], lr=1e-4, weight_decay=0,
+    optimizer = ml.Adam([torch.zeros(3, 64, 3, 3)], lr=1e-4, weight_decay=0,
                                  betas=(0.9, 0.99))
     ##############################
     # MultiStepLR_Restart

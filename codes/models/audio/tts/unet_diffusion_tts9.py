@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import autocast
 from x_transformers import Encoder
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 from models.diffusion.nn import timestep_embedding, normalization, zero_module, conv_nd, linear
 from models.diffusion.unet_diffusion import AttentionBlock, TimestepEmbedSequential, \
@@ -208,7 +208,7 @@ class DiffusionTts(nn.Module):
         # transformer network.
         self.code_converter = nn.Sequential(
             # nn.Embedding
-            bnb.nn.StableEmbedding(in_tokens, conditioning_dim),
+            ml.Embedding(in_tokens, conditioning_dim),
             CheckpointedXTransformerEncoder(
                 needs_permute=False,
                 max_seq_len=-1,

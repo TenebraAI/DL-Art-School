@@ -10,7 +10,7 @@ from models.arch_util import AttentionBlock
 from models.lucidrains.x_transformers import ContinuousTransformerWrapper, Encoder
 from trainer.networks import register_model
 from utils.util import opt_get, checkpoint
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 
 def exists(val):
@@ -60,7 +60,7 @@ class ConvFormatEmbedding(nn.Module):
     def __init__(self, *args, **kwargs):
         super().__init__()
         # nn.Embedding
-        self.emb = bnb.nn.StableEmbedding(*args, **kwargs)
+        self.emb = ml.Embedding(*args, **kwargs)
 
     def forward(self, x):
         y = self.emb(x)
@@ -88,14 +88,14 @@ class CVVP(nn.Module):
         self.cond_emb = nn.Sequential(nn.Conv1d(mel_channels, model_dim//2, kernel_size=5, stride=2, padding=2),
                                       nn.Conv1d(model_dim//2, model_dim, kernel_size=3, stride=2, padding=1))
         self.conditioning_transformer = CollapsingTransformer(model_dim, model_dim, transformer_heads, dropout, conditioning_enc_depth, cond_mask_percentage)
-        self.to_conditioning_latent = bnb.nn.Linear8bitLt(latent_dim, latent_dim, bias=False)
+        self.to_conditioning_latent = ml.Linear(latent_dim, latent_dim, bias=False)
 
         if mel_codes is None:
             self.speech_emb = nn.Conv1d(mel_channels, model_dim, kernel_size=5, padding=2)
         else:
             self.speech_emb = ConvFormatEmbedding(mel_codes, model_dim)
         self.speech_transformer = CollapsingTransformer(model_dim, latent_dim, transformer_heads, dropout, speech_enc_depth, speech_mask_percentage)
-        self.to_speech_latent = bnb.nn.Linear8bitLt(latent_dim, latent_dim, bias=False)
+        self.to_speech_latent = ml.Linear(latent_dim, latent_dim, bias=False)
 
     def get_grad_norm_parameter_groups(self):
         return {

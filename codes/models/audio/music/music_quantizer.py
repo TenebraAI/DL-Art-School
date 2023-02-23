@@ -3,7 +3,7 @@ import functools
 import torch
 from torch import nn
 import torch.nn.functional as F
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 from models.arch_util import zero_module
 from models.vqvae.vqvae import Quantize
@@ -76,7 +76,7 @@ class Wav2Vec2GumbelVectorQuantizer(nn.Module):
         self.codevectors = nn.Parameter(
             torch.FloatTensor(1, self.num_groups * self.num_vars, codevector_dim // self.num_groups)
         )
-        self.weight_proj = bnb.nn.Linear8bitLt(proj_dim, self.num_groups * self.num_vars)
+        self.weight_proj = ml.Linear(proj_dim, self.num_groups * self.num_vars)
 
         # can be decayed for training
         self.temperature = 2

@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from transformers import GPT2Config, GPT2Model
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 from models.arch_util import AttentionBlock, ResBlock
 from models.audio.tts.lucidrains_dvae import DiscreteVAE
@@ -57,8 +57,8 @@ class ConditioningAR(nn.Module):
         del self.gpt.wte  # Unused, we'll do our own embeddings.
 
         # nn.Embedding
-        self.embeddings = bnb.nn.StableEmbedding(num_vectors, dim)
-        self.head = bnb.nn.Linear8bitLt(dim, num_vectors)
+        self.embeddings = ml.Embedding(num_vectors, dim)
+        self.head = ml.Linear(dim, num_vectors)
 
     def forward(self, cheater_codes, conditioning, code_lengths=None, return_latent=False):
         unused_params = []

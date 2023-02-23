@@ -8,7 +8,7 @@ from torch.cuda.amp import autocast
 
 from einops import rearrange, repeat
 from contextlib import contextmanager
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 
 def par(t, nm):
@@ -356,9 +356,9 @@ class VectorQuantize(nn.Module):
 
         codebook_dim = default(codebook_dim, dim)
         requires_projection = codebook_dim != dim
-        self.project_in = bnb.nn.Linear8bitLt(dim, codebook_dim) if requires_projection \
+        self.project_in = ml.Linear(dim, codebook_dim) if requires_projection \
                           else nn.Identity()
-        self.project_out = bnb.nn.Linear8bitLt(codebook_dim, dim) if requires_projection \
+        self.project_out = ml.Linear(codebook_dim, dim) if requires_projection \
                            else nn.Identity()
 
         self.eps = eps

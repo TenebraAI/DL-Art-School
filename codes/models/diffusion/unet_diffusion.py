@@ -20,7 +20,7 @@ from models.diffusion.nn import (
 )
 from trainer.networks import register_model
 from utils.util import checkpoint
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 
 class AttentionPool2d(nn.Module):
@@ -517,7 +517,7 @@ class UNetModel(nn.Module):
 
         if self.num_classes is not None:
             # nn.Embedding
-            self.label_emb = bnb.nn.StableEmbedding(num_classes, time_embed_dim)
+            self.label_emb = ml.Embedding(num_classes, time_embed_dim)
         self.use_raw_y_as_embedding = use_raw_y_as_embedding
         assert not ((self.num_classes is not None) and use_raw_y_as_embedding)  # These are mutually-exclusive.
 
@@ -869,16 +869,16 @@ class EncoderUNetModel(nn.Module):
             )
         elif pool == "spatial":
             self.out = nn.Sequential(
-                bnb.nn.Linear8bitLt(self._feature_size, 2048),
+                ml.Linear(self._feature_size, 2048),
                 nn.ReLU(),
-                bnb.nn.Linear8bitLt(2048, self.out_channels),
+                ml.Linear(2048, self.out_channels),
             )
         elif pool == "spatial_v2":
             self.out = nn.Sequential(
-                bnb.nn.Linear8bitLt(self._feature_size, 2048),
+                ml.Linear(self._feature_size, 2048),
                 normalization(2048),
                 nn.SiLU(),
-                bnb.nn.Linear8bitLt(2048, self.out_channels),
+                ml.Linear(2048, self.out_channels),
             )
         else:
             raise NotImplementedError(f"Unexpected {pool} pooling")

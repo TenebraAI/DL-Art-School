@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from trainer.networks import register_model
 from utils.util import opt_get
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 class WideKernelVgg(nn.Module):
     def __init__(self, nf=64, num_classes=2):
@@ -49,9 +49,9 @@ class WideKernelVgg(nn.Module):
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
             nn.Flatten(),
-            bnb.nn.Linear8bitLt(nf * 8 * 4 * 2, 100),
+            ml.Linear(nf * 8 * 4 * 2, 100),
             nn.ReLU(),
-            bnb.nn.Linear8bitLt(100, num_classes)
+            ml.Linear(100, num_classes)
         )
 
         # These normalization constants should be derived experimentally.

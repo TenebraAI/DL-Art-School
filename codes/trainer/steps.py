@@ -12,7 +12,7 @@ from utils.util import recursively_detach, opt_get, clip_grad_norm
 
 logger = logging.getLogger('base')
 
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 # Defines the expected API for a single training step
 class ConfigurableStep(Module):
@@ -84,7 +84,7 @@ class ConfigurableStep(Module):
             norm_modules = (nn.BatchNorm2d, nn.InstanceNorm2d, nn.BatchNorm1d, nn.InstanceNorm1d,
                             nn.BatchNorm3d, nn.InstanceNorm3d, nn.GroupNorm, nn.LayerNorm)
             # nn.Embedding
-            emb_modules = (bnb.nn.StableEmbedding, nn.EmbeddingBag)
+            emb_modules = (ml.Embedding, nn.EmbeddingBag)
             param_names_notweights = set()
             all_param_names = set()
             param_map = {}
@@ -126,7 +126,7 @@ class ConfigurableStep(Module):
                     { 'params': params_notweights, 'weight_decay': 0 }
                 ]
                 # torch.optim.AdamW
-                opt = bnb.optim.AdamW8bit(groups, lr=opt_config['lr'],
+                opt = ml.AdamW(groups, lr=opt_config['lr'],
                                        weight_decay=opt_get(opt_config, ['weight_decay'], 1e-2),
                                        betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
                 opt._group_names = [params_names_weights, params_names_notweights]
@@ -145,7 +145,7 @@ class ConfigurableStep(Module):
                 # parameters and just use a normal AdamW implementation. In a large network, these weights will normally
                 # be a tiny fraction of the total weights.
                 # torch.optim.AdamW
-                opt_unweighted = bnb.optim.AdamW8bit(params_notweights, lr=opt_config['lr'], weight_decay=0,
+                opt_unweighted = ml.AdamW(params_notweights, lr=opt_config['lr'], weight_decay=0,
                                        betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
                 opt_unweighted._config = opt_config
                 opt_unweighted._config['network'] = net_name
@@ -153,7 +153,7 @@ class ConfigurableStep(Module):
                 self.optimizers.append(opt_unweighted)
 
                 # torch.optim.AdamW
-                opt = ZeroRedundancyOptimizer(params_weights, optimizer_class=bnb.optim.AdamW8bit, lr=opt_config['lr'],
+                opt = ZeroRedundancyOptimizer(params_weights, optimizer_class=ml.AdamW, lr=opt_config['lr'],
                                        weight_decay=opt_get(opt_config, ['weight_decay'], 1e-2),
                                        betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
                 opt.param_groups[0]['initial_lr'] = opt_config['lr']
@@ -168,7 +168,7 @@ class ConfigurableStep(Module):
             elif self.step_opt['optimizer'] == 'lamb':
                 from trainer.optimizers.lamb import Lamb
                 # torch.optim.AdamW
-                opt_unweighted = bnb.optim.AdamW8bit(params_notweights, lr=opt_config['lr'], weight_decay=0,
+                opt_unweighted = ml.AdamW(params_notweights, lr=opt_config['lr'], weight_decay=0,
                                        betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
                 opt_unweighted._config = opt_config
                 opt_unweighted._config['network'] = net_name

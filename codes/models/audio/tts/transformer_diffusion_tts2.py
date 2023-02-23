@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 from models.diffusion.nn import timestep_embedding, normalization, zero_module, conv_nd, linear
 from models.diffusion.unet_diffusion import TimestepEmbedSequential, TimestepBlock
@@ -21,7 +21,7 @@ class MultiGroupEmbedding(nn.Module):
     def __init__(self, tokens, groups, dim):
         super().__init__()
         # nn.Embedding
-        self.m = nn.ModuleList([bnb.nn.StableEmbedding(tokens, dim // groups) for _ in range(groups)])
+        self.m = nn.ModuleList([ml.Embedding(tokens, dim // groups) for _ in range(groups)])
 
     def forward(self, x):
         h = [embedding(x[:, :, i]) for i, embedding in enumerate(self.m)]
@@ -42,7 +42,7 @@ class DietAttentionBlock(TimestepBlock):
     def __init__(self, in_dim, dim, heads, dropout):
         super().__init__()
         self.rms_scale_norm = RMSScaleShiftNorm(in_dim)
-        self.proj = bnb.nn.Linear8bitLt(in_dim, dim)
+        self.proj = ml.Linear(in_dim, dim)
         self.attn = Attention(dim, heads=heads, causal=False, dropout=dropout)
         self.ff = FeedForward(dim, in_dim, mult=1, dropout=dropout, zero_init_output=True)
 
@@ -107,9 +107,9 @@ class TransformerDiffusionTTS(nn.Module):
                     ff_glu=True,
                     rotary_pos_emb=True,
                 )
-        self.clvp_encoder = bnb.nn.Linear8bitLt(clvp_in_dim, prenet_channels)
+        self.clvp_encoder = ml.Linear(clvp_in_dim, prenet_channels)
         # nn.Embedding
-        self.type_embedding = bnb.nn.StableEmbedding(types, prenet_channels)
+        self.type_embedding = ml.Embedding(types, prenet_channels)
 
         # Either code_converter or latent_converter is used, depending on what type of conditioning data is fed.
         # This model is meant to be able to be trained on both for efficiency purposes - it is far less computationally
@@ -117,7 +117,7 @@ class TransformerDiffusionTTS(nn.Module):
         # transformer network.
         if in_groups is None:
             # nn.Embedding
-            self.embeddings = bnb.nn.StableEmbedding(token_count, prenet_channels)
+            self.embeddings = ml.Embedding(token_count, prenet_channels)
         else:
             self.embeddings = MultiGroupEmbedding(token_count, in_groups, prenet_channels)
         self.latent_conditioner = nn.Sequential(
@@ -148,8 +148,8 @@ class TransformerDiffusionTTS(nn.Module):
         self.unconditioned_embedding = nn.Parameter(torch.randn(1,1,prenet_channels))
 
         self.rotary_embeddings = RotaryEmbedding(rotary_emb_dim)
-        self.cond_intg = bnb.nn.Linear8bitLt(prenet_channels*4, model_channels)
-        self.intg = bnb.nn.Linear8bitLt(prenet_channels*2, model_channels)
+        self.cond_intg = ml.Linear(prenet_channels*4, model_channels)
+        self.intg = ml.Linear(prenet_channels*2, model_channels)
 
         self.layers = TimestepRotaryEmbedSequential(*[DietAttentionBlock(model_channels, block_channels, block_channels // 64, dropout) for _ in range(num_layers)])
 

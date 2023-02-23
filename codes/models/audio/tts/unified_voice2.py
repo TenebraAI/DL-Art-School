@@ -13,7 +13,7 @@ from models.lucidrains.x_transformers import RotaryEmbedding, apply_rotary_pos_e
 from trainer.networks import register_model
 from utils.util import opt_get
 
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 class ResBlock(nn.Module):
     """
@@ -282,10 +282,10 @@ class UnifiedVoice(nn.Module):
         self.conditioning_encoder = ConditioningEncoder(80, model_dim, num_attn_heads=heads)
         self.average_conditioning_embeddings = average_conditioning_embeddings
         # nn.Embedding
-        self.text_embedding = bnb.nn.StableEmbedding(self.number_text_tokens, model_dim)
+        self.text_embedding = ml.Embedding(self.number_text_tokens, model_dim)
         if use_mel_codes_as_input:
             # nn.Embedding
-            self.mel_embedding = bnb.nn.StableEmbedding(self.number_mel_codes, model_dim)
+            self.mel_embedding = ml.Embedding(self.number_mel_codes, model_dim)
         else:
             self.mel_embedding = MelEncoder(model_dim, resblocks_per_reduction=1)
         self.gpt, self.mel_pos_embedding, self.text_pos_embedding, self.mel_layer_pos_embedding, self.text_layer_pos_embedding = \
@@ -298,8 +298,8 @@ class UnifiedVoice(nn.Module):
             self.text_solo_embedding = 0
 
         self.final_norm = nn.LayerNorm(model_dim)
-        self.text_head = bnb.nn.Linear8bitLt(model_dim, self.number_text_tokens)
-        self.mel_head = bnb.nn.Linear8bitLt(model_dim, self.number_mel_codes)
+        self.text_head = ml.Linear(model_dim, self.number_text_tokens)
+        self.mel_head = ml.Linear(model_dim, self.number_mel_codes)
 
         # Initialize the embeddings per the GPT-2 scheme
         embeddings = [self.text_embedding]

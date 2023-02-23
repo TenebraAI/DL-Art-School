@@ -13,7 +13,7 @@ from models.audio.tts.tacotron2.tacotron2 import Attention, Encoder
 from trainer.networks import register_model
 from models.audio.tts.tacotron2.taco_utils import get_mask_from_lengths
 from utils.util import checkpoint
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 
 
@@ -187,7 +187,7 @@ class WaveTacotron2(nn.Module):
         self.n_mel_channels = hparams.n_mel_channels
         self.n_frames_per_step = hparams.n_frames_per_step
         # nn.Embedding
-        self.embedding = bnb.nn.StableEmbedding(
+        self.embedding = ml.Embedding(
             hparams.n_symbols, hparams.symbols_embedding_dim)
         std = sqrt(2.0 / (hparams.n_symbols + hparams.symbols_embedding_dim))
         val = sqrt(3.0) * std  # uniform bounds for std

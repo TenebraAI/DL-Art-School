@@ -21,7 +21,7 @@ import torchvision.utils as utils
 
 from utils.loss_accumulator import LossAccumulator, InfStorageLossAccumulator
 from utils.util import opt_get, denormalize
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 logger = logging.getLogger('base')
 
@@ -338,7 +338,7 @@ class ExtensibleTrainer(BaseModel):
                     for net in self.networks.values():
                         for mod in net.modules():
                             fan_in = -1
-                            if isinstance(mod, bnb.nn.Linear8bitLt):
+                            if isinstance(mod, ml.Linear):
                                 fan_in = mod.weight.data.shape[1]
                             elif isinstance(mod, nn.Conv1d):
                                 fan_in = mod.weight.data.shape[0]

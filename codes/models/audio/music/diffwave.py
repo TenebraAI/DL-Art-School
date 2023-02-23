@@ -17,7 +17,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 from math import sqrt
 
@@ -25,7 +25,7 @@ from torch.utils.checkpoint import checkpoint
 
 from trainer.networks import register_model
 
-Linear = bnb.nn.Linear8bitLt
+Linear = ml.Linear
 ConvTranspose2d = nn.ConvTranspose2d
 
 

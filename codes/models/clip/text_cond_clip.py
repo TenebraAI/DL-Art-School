@@ -7,7 +7,7 @@ from models.audio.tts.unified_voice2 import ConditioningEncoder
 from models.lucidrains.dalle.transformer import Transformer
 from trainer.networks import register_model
 from utils.util import opt_get
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 
 def exists(val):
@@ -46,7 +46,7 @@ class VoiceCondCLIP(nn.Module):
         self.speech_pos_emb = nn.Embedding(num_speech_tokens, dim_speech)
         self.speech_transformer = Transformer(causal=False, seq_len=speech_seq_len, dim=dim_speech,
                                               depth=speech_enc_depth, heads=speech_heads, rotary_emb=False)
-        self.to_speech_latent = bnb.nn.Linear8bitLt(dim_speech, dim_latent, bias=False)
+        self.to_speech_latent = ml.Linear(dim_speech, dim_latent, bias=False)
 
         self.temperature = nn.Parameter(torch.tensor(1.))
         self.voice_mask_percentage = voice_mask_percentage

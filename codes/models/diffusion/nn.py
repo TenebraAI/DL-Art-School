@@ -6,7 +6,7 @@ import math
 
 import torch as th
 import torch.nn as nn
-import bitsandbytes as bnb
+import torch_intermediary as ml
 
 
 # PyTorch 1.7 has SiLU, but we support PyTorch 1.5.
@@ -37,7 +37,7 @@ def linear(*args, **kwargs):
     """
     Create a linear module.
     """
-    return bnb.nn.Linear8bitLt(*args, **kwargs)
+    return ml.Linear(*args, **kwargs)
 
 
 def avg_pool_nd(dims, *args, **kwargs):
