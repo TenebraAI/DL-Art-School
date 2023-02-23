@@ -67,6 +67,8 @@ setuptools.setup(
         "g-mlp-pytorch",
         "x-clip",
         "x_transformers==1.0.4",
+        
+        "bitsandbytes==0.35.0",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",

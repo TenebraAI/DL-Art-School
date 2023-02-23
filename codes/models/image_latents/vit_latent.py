@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from models.arch_util import ResBlock
 from models.lucidrains.x_transformers import Encoder
 from trainer.networks import register_model
+import torch_intermediary as ml
 
 
 class VitLatent(nn.Module):
@@ -31,10 +32,10 @@ class VitLatent(nn.Module):
                 do_checkpointing=True
             )
 
-        self.mlp = nn.Sequential(nn.Linear(hidden_dim, hidden_dim*2),
+        self.mlp = nn.Sequential(ml.Linear(hidden_dim, hidden_dim*2),
                                  nn.BatchNorm1d(hidden_dim*2),
                                  nn.ReLU(inplace=True),
-                                 nn.Linear(hidden_dim*2, hidden_dim))
+                                 ml.Linear(hidden_dim*2, hidden_dim))
 
     def provide_ema(self, ema):
         self.ema = ema
