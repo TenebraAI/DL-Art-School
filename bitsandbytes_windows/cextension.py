@@ -28,7 +28,7 @@ class CUDALibrary_Singleton(object):
             # self.lib = ct.cdll.LoadLibrary(binary_path)
             self.lib = ct.cdll.LoadLibrary(str(binary_path))            # $$$
         else:
-            print(f"CUDA SETUP: Loading binary {binary_path}...")
+            #print(f"CUDA SETUP: Loading binary {binary_path}...")
             # self.lib = ct.cdll.LoadLibrary(binary_path)
             self.lib = ct.cdll.LoadLibrary(str(binary_path))            # $$$
 
