@@ -185,7 +185,7 @@ class ExtensibleTrainer(BaseModel):
         self.env['discriminators'] = self.netsD
         self.env['emas'] = self.emas
 
-        self.print_network()  # print network
+        # self.print_network()  # print network
         self.load()  # load networks from save states as needed
 
         # Load experiments
