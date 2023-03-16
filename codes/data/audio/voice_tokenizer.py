@@ -29,7 +29,7 @@ def remove_extraneous_punctuation(word):
 
 
 class VoiceBpeTokenizer:
-    def __init__(self, vocab_file=DEFAULT_VOCAB_FILE, preprocess=None):
+    def __init__(self, vocab_file, preprocess=None):
         if preprocess is None:
             self.preprocess = vocab_file[-8:] != "ipa.json"
         else:
