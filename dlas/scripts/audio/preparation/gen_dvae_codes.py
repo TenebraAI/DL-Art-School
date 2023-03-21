@@ -3,7 +3,8 @@ import os
 import torch
 from tqdm import tqdm
 
-from scripts.audio.gen.speech_synthesis_utils import load_speech_dvae, wav_to_mel
+from dlas.scripts.audio.gen.speech_synthesis_utils import (load_speech_dvae,
+                                                           wav_to_mel)
 
 if __name__ == '__main__':
     input_folder = 'C:\\Users\\James\\Downloads\\lex2\\lexfridman_training_mp3'
@@ -21,7 +22,7 @@ if __name__ == '__main__':
         'n_workers': 2,
         'batch_size': 64,
     }
-    from data import create_dataset, create_dataloader
+    from data import create_dataloader, create_dataset
     os.makedirs(output_folder, exist_ok=True)
 
     ds = create_dataset(params)
@@ -34,8 +35,10 @@ if __name__ == '__main__':
             mel = wav_to_mel(audio)
             codes = dvae.get_codebook_indices(mel)
             for i in range(audio.shape[0]):
-                c = codes[i, :batch['clip_lengths'][i]//1024+4]  # +4 seems empirically to be a good clipping point - it seems to preserve the termination codes.
+                # +4 seems empirically to be a good clipping point - it seems to preserve the termination codes.
+                c = codes[i, :batch['clip_lengths'][i]//1024+4]
                 fn = batch['path'][i]
-                outp = os.path.join(output_folder, os.path.relpath(fn, input_folder) + ".pth")
+                outp = os.path.join(output_folder, os.path.relpath(
+                    fn, input_folder) + ".pth")
                 os.makedirs(os.path.dirname(outp), exist_ok=True)
                 torch.save(c.tolist(), outp)

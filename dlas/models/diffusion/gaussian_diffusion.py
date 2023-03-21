@@ -15,8 +15,9 @@ import torch as th
 from torch.distributions import Normal
 from tqdm import tqdm
 
-from models.diffusion.nn import mean_flat
-from models.diffusion.losses import normal_kl, discretized_gaussian_log_likelihood
+from dlas.models.diffusion.losses import (discretized_gaussian_log_likelihood,
+                                          normal_kl)
+from dlas.models.diffusion.nn import mean_flat
 
 
 def causal_timestep_adjustment(t, S, num_timesteps, causal_slope=1, add_jitter=True):
@@ -1186,8 +1187,7 @@ def _extract_into_tensor(arr, timesteps, broadcast_shape):
 
 
 def test_causal_training_losses():
-    from models.diffusion.respace import SpacedDiffusion
-    from models.diffusion.respace import space_timesteps
+    from models.diffusion.respace import SpacedDiffusion, space_timesteps
     diff = SpacedDiffusion(use_timesteps=space_timesteps(4000, [4000]), model_mean_type='epsilon',
                            model_var_type='learned_range', loss_type='mse', betas=get_named_beta_schedule('linear', 4000),
                            conditioning_free=False, conditioning_free_k=1)

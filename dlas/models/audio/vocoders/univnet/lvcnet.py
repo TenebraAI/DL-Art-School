@@ -35,12 +35,15 @@ class KernelPredictor(torch.nn.Module):
         self.conv_kernel_size = conv_kernel_size
         self.conv_layers = conv_layers
 
-        kpnet_kernel_channels = conv_in_channels * conv_out_channels * conv_kernel_size * conv_layers  # l_w
+        kpnet_kernel_channels = conv_in_channels * \
+            conv_out_channels * conv_kernel_size * conv_layers  # l_w
         kpnet_bias_channels = conv_out_channels * conv_layers  # l_b
 
         self.input_conv = nn.Sequential(
-            nn.utils.weight_norm(nn.Conv1d(cond_channels, kpnet_hidden_channels, 5, padding=2, bias=True)),
-            getattr(nn, kpnet_nonlinear_activation)(**kpnet_nonlinear_activation_params),
+            nn.utils.weight_norm(
+                nn.Conv1d(cond_channels, kpnet_hidden_channels, 5, padding=2, bias=True)),
+            getattr(nn, kpnet_nonlinear_activation)(
+                **kpnet_nonlinear_activation_params),
         )
 
         self.residual_convs = nn.ModuleList()
@@ -52,11 +55,13 @@ class KernelPredictor(torch.nn.Module):
                     nn.utils.weight_norm(
                         nn.Conv1d(kpnet_hidden_channels, kpnet_hidden_channels, kpnet_conv_size, padding=padding,
                                   bias=True)),
-                    getattr(nn, kpnet_nonlinear_activation)(**kpnet_nonlinear_activation_params),
+                    getattr(nn, kpnet_nonlinear_activation)(
+                        **kpnet_nonlinear_activation_params),
                     nn.utils.weight_norm(
                         nn.Conv1d(kpnet_hidden_channels, kpnet_hidden_channels, kpnet_conv_size, padding=padding,
                                   bias=True)),
-                    getattr(nn, kpnet_nonlinear_activation)(**kpnet_nonlinear_activation_params),
+                    getattr(nn, kpnet_nonlinear_activation)(
+                        **kpnet_nonlinear_activation_params),
                 )
             )
         self.kernel_conv = nn.utils.weight_norm(
@@ -170,7 +175,8 @@ class LVCBlock(torch.nn.Module):
         for i, conv in enumerate(self.conv_blocks):
             output = conv(x)  # (B, c_g, stride * L')
 
-            k = kernels[:, i, :, :, :, :]  # (B, 2 * c_g, c_g, kernel_size, cond_length)
+            # (B, 2 * c_g, c_g, kernel_size, cond_length)
+            k = kernels[:, i, :, :, :, :]
             b = bias[:, i, :, :]  # (B, 2 * c_g, cond_length)
 
             output = self.location_variable_convolution(output, k, b,
@@ -194,23 +200,29 @@ class LVCBlock(torch.nn.Module):
         '''
         batch, _, in_length = x.shape
         batch, _, out_channels, kernel_size, kernel_length = kernel.shape
-        assert in_length == (kernel_length * hop_size), "length of (x, kernel) is not matched"
+        assert in_length == (
+            kernel_length * hop_size), "length of (x, kernel) is not matched"
 
         padding = dilation * int((kernel_size - 1) / 2)
-        x = F.pad(x, (padding, padding), 'constant', 0)  # (batch, in_channels, in_length + 2*padding)
-        x = x.unfold(2, hop_size + 2 * padding, hop_size)  # (batch, in_channels, kernel_length, hop_size + 2*padding)
+        # (batch, in_channels, in_length + 2*padding)
+        x = F.pad(x, (padding, padding), 'constant', 0)
+        # (batch, in_channels, kernel_length, hop_size + 2*padding)
+        x = x.unfold(2, hop_size + 2 * padding, hop_size)
 
         if hop_size < dilation:
             x = F.pad(x, (0, dilation), 'constant', 0)
         x = x.unfold(3, dilation,
                      dilation)  # (batch, in_channels, kernel_length, (hop_size + 2*padding)/dilation, dilation)
         x = x[:, :, :, :, :hop_size]
-        x = x.transpose(3, 4)  # (batch, in_channels, kernel_length, dilation, (hop_size + 2*padding)/dilation)
-        x = x.unfold(4, kernel_size, 1)  # (batch, in_channels, kernel_length, dilation, _, kernel_size)
+        # (batch, in_channels, kernel_length, dilation, (hop_size + 2*padding)/dilation)
+        x = x.transpose(3, 4)
+        # (batch, in_channels, kernel_length, dilation, _, kernel_size)
+        x = x.unfold(4, kernel_size, 1)
 
         o = torch.einsum('bildsk,biokl->bolsd', x, kernel)
         o = o.to(memory_format=torch.channels_last_3d)
-        bias = bias.unsqueeze(-1).unsqueeze(-1).to(memory_format=torch.channels_last_3d)
+        bias = bias.unsqueeze(-1).unsqueeze(-1).to(
+            memory_format=torch.channels_last_3d)
         o = o + bias
         o = o.contiguous().view(batch, out_channels, -1)
 

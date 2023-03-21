@@ -1,6 +1,7 @@
+import argparse
 import os
 import shutil
-import argparse
+
 from tqdm import tqdm
 
 if __name__ == '__main__':
@@ -17,11 +18,8 @@ if __name__ == '__main__':
         for line in tqdm(lines):
             line = line.strip()
             assert args.basis in line
-            movefile = os.path.join(args.garbage, line.replace(args.basis, '')[1:])
+            movefile = os.path.join(
+                args.garbage, line.replace(args.basis, '')[1:])
             print(f'{line} -> {movefile}')
             os.makedirs(os.path.dirname(movefile), exist_ok=True)
             shutil.move(line, movefile)
-
-    
-    
-    

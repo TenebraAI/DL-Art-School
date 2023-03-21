@@ -32,11 +32,13 @@ def find_registered_evaluators(base_path="trainer/eval"):
         if mod.ispkg:
             EXCLUSION_LIST = []
             if mod.name not in EXCLUSION_LIST:
-                results.update(find_registered_evaluators(f'{base_path}/{mod.name}'))
+                results.update(find_registered_evaluators(
+                    f'{base_path}/{mod.name}'))
         else:
             mod_name = f'{base_path}/{mod.name}'.replace('/', '.')
             importlib.import_module(mod_name)
-            classes = inspect.getmembers(sys.modules[mod_name], inspect.isclass)
+            classes = inspect.getmembers(
+                sys.modules[mod_name], inspect.isclass)
             for name, obj in classes:
                 if 'Evaluator' in [mro.__name__ for mro in inspect.getmro(obj)]:
                     results[format_evaluator_name(name)] = obj

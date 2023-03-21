@@ -1,17 +1,15 @@
 import os
+import os.path as osp
 
 import torch
-import os.path as osp
 import torchvision
+from pytorch_fid import fid_score
 from torch.utils.data import BatchSampler
 
-import trainer.eval.evaluator as evaluator
-from pytorch_fid import fid_score
-
-
+import dlas.trainer.eval.evaluator as evaluator
 # Evaluate that feeds a LR structure into the input, then calculates a FID score on the results added to
 # the interpolated LR structure.
-from data.images.stylegan2_dataset import Stylegan2Dataset
+from dlas.data.images.stylegan2_dataset import Stylegan2Dataset
 
 
 class SrStyleTransferEvaluator(evaluator.Evaluator):
@@ -23,7 +21,8 @@ class SrStyleTransferEvaluator(evaluator.Evaluator):
         self.scale = opt_eval['scale']
         self.fid_real_samples = opt_eval['real_fid_path']
         self.embedding_generator = opt_eval['embedding_generator']
-        self.gen_output_index = opt_eval['gen_index'] if 'gen_index' in opt_eval.keys() else 0
+        self.gen_output_index = opt_eval['gen_index'] if 'gen_index' in opt_eval.keys(
+        ) else 0
         self.dataset = Stylegan2Dataset({'path': self.fid_real_samples,
                                          'target_size': self.im_sz,
                                          'aug_prob': 0,
@@ -32,25 +31,33 @@ class SrStyleTransferEvaluator(evaluator.Evaluator):
 
     def perform_eval(self):
         embedding_generator = self.env['generators'][self.embedding_generator]
-        fid_fake_path = osp.join(self.env['base_path'], "../../models", "fid_fake", str(self.env["step"]))
+        fid_fake_path = osp.join(
+            self.env['base_path'], "../../models", "fid_fake", str(self.env["step"]))
         os.makedirs(fid_fake_path, exist_ok=True)
-        fid_real_path = osp.join(self.env['base_path'], "../../models", "fid_real", str(self.env["step"]))
+        fid_real_path = osp.join(
+            self.env['base_path'], "../../models", "fid_real", str(self.env["step"]))
         os.makedirs(fid_real_path, exist_ok=True)
         counter = 0
         for batch in self.sampler:
-            noise = torch.FloatTensor(self.batch_sz, 3, self.im_sz, self.im_sz).uniform_(0., 1.).to(self.env['device'])
+            noise = torch.FloatTensor(self.batch_sz, 3, self.im_sz, self.im_sz).uniform_(
+                0., 1.).to(self.env['device'])
             batch_hq = [e['hq'] for e in batch]
             batch_hq = torch.stack(batch_hq, dim=0).to(self.env['device'])
-            resized_batch = torch.nn.functional.interpolate(batch_hq, scale_factor=1/self.scale, mode="area")
+            resized_batch = torch.nn.functional.interpolate(
+                batch_hq, scale_factor=1/self.scale, mode="area")
             embedding = embedding_generator(resized_batch)
             gen = self.model(noise, embedding)
             if not isinstance(gen, list) and not isinstance(gen, tuple):
                 gen = [gen]
             gen = gen[self.gen_output_index]
-            out = gen + torch.nn.functional.interpolate(resized_batch, scale_factor=self.scale, mode='bilinear')
+            out = gen + \
+                torch.nn.functional.interpolate(
+                    resized_batch, scale_factor=self.scale, mode='bilinear')
             for b in range(self.batch_sz):
-                torchvision.utils.save_image(out[b], osp.join(fid_fake_path, "%i_.png" % (counter)))
-                torchvision.utils.save_image(batch_hq[b], osp.join(fid_real_path, "%i_.png" % (counter)))
+                torchvision.utils.save_image(out[b], osp.join(
+                    fid_fake_path, "%i_.png" % (counter)))
+                torchvision.utils.save_image(batch_hq[b], osp.join(
+                    fid_real_path, "%i_.png" % (counter)))
                 counter += 1
 
         return {"fid": fid_score.calculate_fid_given_paths([fid_real_path, fid_fake_path], self.batch_sz, True,

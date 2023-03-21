@@ -1,14 +1,16 @@
 from math import sqrt
+
 import torch
 from munch import munchify
-from torch.autograd import Variable
 from torch import nn
+from torch.autograd import Variable
 from torch.nn import functional as F
-from models.audio.tts.tacotron2.layers import ConvNorm, LinearNorm
-from models.audio.tts.tacotron2.hparams import create_hparams
-from trainer.networks import register_model
-from models.audio.tts.tacotron2.taco_utils import get_mask_from_lengths
-import torch_intermediary as ml
+
+import dlas.torch_intermediary as ml
+from dlas.models.audio.tts.tacotron2.hparams import create_hparams
+from dlas.models.audio.tts.tacotron2.layers import ConvNorm, LinearNorm
+from dlas.models.audio.tts.tacotron2.taco_utils import get_mask_from_lengths
+from dlas.trainer.networks import register_model
 
 
 class LocationLayer(nn.Module):
@@ -59,7 +61,8 @@ class Attention(nn.Module):
         """
 
         processed_query = self.query_layer(query.unsqueeze(1))
-        processed_attention_weights = self.location_layer(attention_weights_cat)
+        processed_attention_weights = self.location_layer(
+            attention_weights_cat)
         energies = self.v(torch.tanh(
             processed_query + processed_attention_weights + processed_memory))
 
@@ -128,7 +131,8 @@ class Postnet(nn.Module):
                     ConvNorm(hparams.postnet_embedding_dim,
                              hparams.postnet_embedding_dim,
                              kernel_size=hparams.postnet_kernel_size, stride=1,
-                             padding=int((hparams.postnet_kernel_size - 1) / 2),
+                             padding=int(
+                                 (hparams.postnet_kernel_size - 1) / 2),
                              dilation=1, w_init_gain='tanh'),
                     nn.BatchNorm1d(hparams.postnet_embedding_dim))
             )
@@ -140,11 +144,12 @@ class Postnet(nn.Module):
                          padding=int((hparams.postnet_kernel_size - 1) / 2),
                          dilation=1, w_init_gain='linear'),
                 nn.BatchNorm1d(hparams.n_mel_channels))
-            )
+        )
 
     def forward(self, x):
         for i in range(len(self.convolutions) - 1):
-            x = F.dropout(torch.tanh(self.convolutions[i](x)), 0.5, self.training)
+            x = F.dropout(torch.tanh(
+                self.convolutions[i](x)), 0.5, self.training)
         x = F.dropout(self.convolutions[-1](x), 0.5, self.training)
 
         return x
@@ -155,6 +160,7 @@ class Encoder(nn.Module):
         - Three 1-d convolution banks
         - Bidirectional LSTM
     """
+
     def __init__(self, hparams):
         super(Encoder, self).__init__()
 
@@ -408,7 +414,8 @@ class Decoder(nn.Module):
         mel_outputs, gate_outputs, alignments = [], [], []
         while len(mel_outputs) < decoder_inputs.size(0) - 1:
             decoder_input = decoder_inputs[len(mel_outputs)]
-            mel_output, gate_output, attention_weights = self.decode(decoder_input)
+            mel_output, gate_output, attention_weights = self.decode(
+                decoder_input)
             mel_outputs += [mel_output.squeeze(1)]
             gate_outputs += [gate_output.squeeze(1)]
             alignments += [attention_weights]
@@ -529,9 +536,9 @@ def register_nv_tacotron2(opt_net, opt):
 
 if __name__ == '__main__':
     tron = register_nv_tacotron2({}, {})
-    inputs = torch.randint(high=24, size=(1,12)), \
-             torch.tensor([12]), \
-             torch.randn((1,80,749)), \
-             torch.tensor([749])
+    inputs = torch.randint(high=24, size=(1, 12)), \
+        torch.tensor([12]), \
+        torch.randn((1, 80, 749)), \
+        torch.tensor([749])
     out = tron(*inputs)
     print(out)

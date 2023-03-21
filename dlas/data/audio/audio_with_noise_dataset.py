@@ -2,18 +2,17 @@ import random
 import sys
 from math import pi
 
-import librosa
 import torch
+import torch.nn.functional as F
 import torchaudio
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-import torch.nn.functional as F
-from data.audio.unsupervised_audio_dataset import UnsupervisedAudioDataset, load_audio
-from data.util import load_paths_from_cache, find_files_of_type, is_audio_file
-
-# Just all ones.
-from utils.util import opt_get
+from dlas.data.audio.unsupervised_audio_dataset import (
+    UnsupervisedAudioDataset, load_audio)
+from dlas.data.util import (find_files_of_type, is_audio_file,
+                            load_paths_from_cache)
+from dlas.utils.util import opt_get
 
 
 def _integration_fn_fully_enabled(n):
@@ -23,7 +22,7 @@ def _integration_fn_fully_enabled(n):
 # Randomly assigns up to 5 blocks of the output tensor the value '1'. Rest is zero
 def _integration_fn_spiky(n):
     fn = torch.zeros((n,))
-    spikes = random.randint(1,5)
+    spikes = random.randint(1, 5)
     for _ in range(spikes):
         sz = random.randint(n//8, n//2)
         pos = random.randint(0, n)
@@ -35,18 +34,19 @@ def _integration_fn_spiky(n):
 # Uses a sinusoidal ramp up and down (of random length) to a peak which is held for a random duration.
 def _integration_fn_smooth(n):
     center = random.randint(1, n-2)
-    max_duration=n-center-1
+    max_duration = n-center-1
     duration = random.randint(max_duration//4, max_duration)
     end = center+duration
 
-    ramp_up_sz = random.randint(n//16,n//4)
-    ramp_up = torch.sin(pi*torch.arange(0,ramp_up_sz)/(2*ramp_up_sz))
+    ramp_up_sz = random.randint(n//16, n//4)
+    ramp_up = torch.sin(pi*torch.arange(0, ramp_up_sz)/(2*ramp_up_sz))
     if ramp_up_sz > center:
         ramp_up = ramp_up[(ramp_up_sz-center):]
         ramp_up_sz = center
 
-    ramp_down_sz = random.randint(n//16,n//4)
-    ramp_down = torch.flip(torch.sin(pi*torch.arange(0,ramp_down_sz)/(2*ramp_down_sz)), dims=[0])
+    ramp_down_sz = random.randint(n//16, n//4)
+    ramp_down = torch.flip(
+        torch.sin(pi*torch.arange(0, ramp_down_sz)/(2*ramp_down_sz)), dims=[0])
     if ramp_down_sz > (n-end):
         ramp_down = ramp_down[:(n-end)]
         ramp_down_sz = n-end
@@ -71,16 +71,22 @@ def load_rir(path, sr, max_sz):
 Wraps a unsupervised_audio_dataset and applies noise to the output clips, then provides labels depending on what
 noise was added.
 '''
+
+
 class AudioWithNoiseDataset(Dataset):
     def __init__(self, opt):
         self.underlying_dataset = UnsupervisedAudioDataset(opt)
-        self.env_noise_paths = load_paths_from_cache(opt['env_noise_paths'], opt['env_noise_cache'])
-        self.music_paths = load_paths_from_cache(opt['music_paths'], opt['music_cache'])
-        self.openair_paths = find_files_of_type('img', opt['openair_path'], qualifier=is_audio_file)[0]
+        self.env_noise_paths = load_paths_from_cache(
+            opt['env_noise_paths'], opt['env_noise_cache'])
+        self.music_paths = load_paths_from_cache(
+            opt['music_paths'], opt['music_cache'])
+        self.openair_paths = find_files_of_type(
+            'img', opt['openair_path'], qualifier=is_audio_file)[0]
         self.min_volume = opt_get(opt, ['min_noise_volume'], .2)
         self.max_volume = opt_get(opt, ['max_noise_volume'], .5)
         self.sampling_rate = self.underlying_dataset.sampling_rate
-        self.use_gpu_for_reverb_compute = opt_get(opt, ['use_gpu_for_reverb_compute'], True)
+        self.use_gpu_for_reverb_compute = opt_get(
+            opt, ['use_gpu_for_reverb_compute'], True)
         self.openair_kernels = None
         self.current_item_fetch = 0
         self.fetch_error_count = 0
@@ -90,7 +96,8 @@ class AudioWithNoiseDataset(Dataset):
             # Load the openair reverbs as CUDA tensors.
             self.openair_kernels = []
             for oa in self.openair_paths:
-                self.openair_kernels.append(load_rir(oa, self.underlying_dataset.sampling_rate, self.underlying_dataset.sampling_rate*2).cuda())
+                self.openair_kernels.append(load_rir(
+                    oa, self.underlying_dataset.sampling_rate, self.underlying_dataset.sampling_rate*2).cuda())
 
     def __getitem__(self, item):
         if self.current_item_fetch != item:
@@ -113,10 +120,11 @@ class AudioWithNoiseDataset(Dataset):
             clip = clip * clipvol
 
             label = random.randint(0, 4)  # Current excludes GSM corruption.
-            #label = 3
+            # label = 3
             if label > 0 and label < 4:  # 0 is basically "leave it alone"
                 aug_needed = True
-                augvol = (random.random() * (self.max_volume-self.min_volume) + self.min_volume)
+                augvol = (random.random() * (self.max_volume -
+                          self.min_volume) + self.min_volume)
                 if label == 1:
                     # Add environmental noise.
                     augpath = random.choice(self.env_noise_paths)
@@ -131,13 +139,15 @@ class AudioWithNoiseDataset(Dataset):
                     # This can take two forms:
                     if padding_room < 22000 or random.random() < .5:
                         # (1) The voices talk over one another. If there is no padding room, we always take this choice.
-                        intg_fns = [_integration_fn_smooth, _integration_fn_fully_enabled]
+                        intg_fns = [_integration_fn_smooth,
+                                    _integration_fn_fully_enabled]
                     else:
                         # (2) There are simply two voices in the clip, separated from one another.
                         # This is a special case that does not use the same logic as the rest of the augmentations.
-                        aug = load_audio(augpath, self.underlying_dataset.sampling_rate)
+                        aug = load_audio(
+                            augpath, self.underlying_dataset.sampling_rate)
                         # Pad with some random silence
-                        aug = F.pad(aug, (random.randint(20,4000), 0))
+                        aug = F.pad(aug, (random.randint(20, 4000), 0))
                         # Fit what we can given the padding room we have.
                         aug = aug[:, :padding_room]
                         clip = torch.cat([clip, aug], dim=1)
@@ -146,7 +156,8 @@ class AudioWithNoiseDataset(Dataset):
                         out['clip_lengths'] = torch.tensor(clip.shape[-1])
                         aug_needed = False
                 if aug_needed:
-                    aug = load_audio(augpath, self.underlying_dataset.sampling_rate)
+                    aug = load_audio(
+                        augpath, self.underlying_dataset.sampling_rate)
                     if aug.shape[1] > clip.shape[1]:
                         n, cn = aug.shape[1], clip.shape[1]
                         gap = n-cn
@@ -157,7 +168,8 @@ class AudioWithNoiseDataset(Dataset):
                     if aug.shape[1] < clip.shape[1]:
                         gap = clip.shape[1] - aug.shape[1]
                         placement = random.randint(0, gap-1)
-                        aug = torch.nn.functional.pad(aug, (placement, gap-placement))
+                        aug = torch.nn.functional.pad(
+                            aug, (placement, gap-placement))
                     clip = clip + aug
             elif label == 4:
                 # Perform reverb (to simulate being in a large room with an omni-mic). This is performed by convolving
@@ -166,19 +178,23 @@ class AudioWithNoiseDataset(Dataset):
                     rir = random.choice(self.openair_kernels)
                 else:
                     augpath = random.choice(self.openair_paths)
-                    rir = load_rir(augpath, self.underlying_dataset.sampling_rate, clip.shape[-1])
+                    rir = load_rir(
+                        augpath, self.underlying_dataset.sampling_rate, clip.shape[-1])
                 clip = torch.nn.functional.pad(clip, (rir.shape[1]-1, 0))
                 if self.use_gpu_for_reverb_compute:
                     clip = clip.cuda()
-                clip = torch.nn.functional.conv1d(clip.unsqueeze(0), rir.unsqueeze(0)).squeeze(0).cpu()
+                clip = torch.nn.functional.conv1d(
+                    clip.unsqueeze(0), rir.unsqueeze(0)).squeeze(0).cpu()
             elif label == 5:
                 # Apply the GSM codec to simulate cellular phone audio.
-                clip = torchaudio.functional.apply_codec(clip, self.underlying_dataset.sampling_rate, format="gsm")
+                clip = torchaudio.functional.apply_codec(
+                    clip, self.underlying_dataset.sampling_rate, format="gsm")
         except:
             if self.fetch_error_count > 10:
-                print(f"Exception encountered processing {item}, re-trying because this is often just a failed aug.")
+                print(
+                    f"Exception encountered processing {item}, re-trying because this is often just a failed aug.")
                 print(sys.exc_info())
-                #raise  # Uncomment to surface exceptions.
+                # raise  # Uncomment to surface exceptions.
             self.fetch_error_count += 1
             return self[item]
 
@@ -187,7 +203,7 @@ class AudioWithNoiseDataset(Dataset):
         clip = F.pad(clip, (0, padding_room))
         out['clip'] = clip
         out['label'] = label
-        #out['aug'] = aug
+        # out['aug'] = aug
         out['augpath'] = augpath
         out['augvol'] = augvol
         out['clipvol'] = clipvol
@@ -216,14 +232,15 @@ if __name__ == '__main__':
         'openair_path': 'D:\\data\\audio\\openair\\resampled',
         'use_gpu_for_reverb_compute': False,
     }
-    from data import create_dataset, create_dataloader, util
+    from data import create_dataloader, create_dataset, util
 
     ds = create_dataset(params)
     dl = create_dataloader(ds, params, pin_memory=False)
     i = 0
     for b in tqdm(dl):
         for b_ in range(b['clip'].shape[0]):
-            #torchaudio.save(f'{i}_clip_{b_}_{b["label"][b_].item()}.wav', b['clip'][b_][:, :b['clip_lengths'][b_]], ds.sampling_rate)
-            #torchaudio.save(f'{i}_clip_{b_}_aug.wav', b['aug'][b_], ds.sampling_rate)
-            print(f'{i} aug path: {b["augpath"][b_]} aug volume: {b["augvol"][b_]} clip volume: {b["clipvol"][b_]}')
+            # torchaudio.save(f'{i}_clip_{b_}_{b["label"][b_].item()}.wav', b['clip'][b_][:, :b['clip_lengths'][b_]], ds.sampling_rate)
+            # torchaudio.save(f'{i}_clip_{b_}_aug.wav', b['aug'][b_], ds.sampling_rate)
+            print(
+                f'{i} aug path: {b["augpath"][b_]} aug volume: {b["augvol"][b_]} clip volume: {b["clipvol"][b_]}')
             i += 1

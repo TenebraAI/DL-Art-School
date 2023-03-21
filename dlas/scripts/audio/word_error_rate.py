@@ -1,9 +1,9 @@
 import Levenshtein
-from jiwer import wer, compute_measures
 import torch
+from jiwer import compute_measures, wer
 from tqdm import tqdm
 
-from data.audio.voice_tokenizer import VoiceBpeTokenizer
+from dlas.data.audio.voice_tokenizer import VoiceBpeTokenizer
 
 
 def load_truths(file):
@@ -16,7 +16,7 @@ def load_truths(file):
                 print(spl)
                 continue
             path, truth = spl
-            #path = path.replace('wav/', '')
+            # path = path.replace('wav/', '')
             # This preprocesses the truth data in the same way that training data is processed: removing punctuation, all lowercase, removing unnecessary
             # whitespace, and applying "english cleaners", which convert words like "mrs" to "missus" and such.
             truth = niltok.preprocess_text(truth)

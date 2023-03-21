@@ -1,20 +1,20 @@
 from math import sqrt
+
 import torch
 from munch import munchify
-from torch.autograd import Variable
 from torch import nn
+from torch.autograd import Variable
 from torch.nn import functional as F
 
-from models.arch_util import ConvGnSilu
-from models.diffusion.unet_diffusion import UNetModel, AttentionPool2d
-from models.audio.tts.tacotron2.layers import LinearNorm
-from models.audio.tts.tacotron2.hparams import create_hparams
-from models.audio.tts.tacotron2.tacotron2 import Attention, Encoder
-from trainer.networks import register_model
-from models.audio.tts.tacotron2.taco_utils import get_mask_from_lengths
-from utils.util import checkpoint
-import torch_intermediary as ml
-
+import dlas.torch_intermediary as ml
+from dlas.models.arch_util import ConvGnSilu
+from dlas.models.audio.tts.tacotron2.hparams import create_hparams
+from dlas.models.audio.tts.tacotron2.layers import LinearNorm
+from dlas.models.audio.tts.tacotron2.taco_utils import get_mask_from_lengths
+from dlas.models.audio.tts.tacotron2.tacotron2 import Attention, Encoder
+from dlas.models.diffusion.unet_diffusion import AttentionPool2d, UNetModel
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint
 
 
 class WavDecoder(nn.Module):
@@ -24,26 +24,33 @@ class WavDecoder(nn.Module):
         self.K = int(sample_rate * (K_ms/1000))
         self.clarifier = UNetModel(image_size=self.K,
                                    in_channels=1,
-                                   model_channels=dec_channels // 4,  # This is a requirement to enable to load the embedding produced by the decoder into the unet model.
+                                   # This is a requirement to enable to load the embedding produced by the decoder into the unet model.
+                                   model_channels=dec_channels // 4,
                                    out_channels=2,  # 2 channels: eps_pred and variance_pred
                                    num_res_blocks=2,
                                    attention_resolutions=(8,),
                                    dims=1,
                                    dropout=.1,
-                                   channel_mult=(1,2,4,8),
+                                   channel_mult=(1, 2, 4, 8),
                                    use_raw_y_as_embedding=True)
         assert self.K % 64 == 0  # Otherwise the UNetModel breaks.
-        self.pre_rnn = nn.Sequential(ConvGnSilu(1,32,kernel_size=5,convnd=nn.Conv1d),
-                                     ConvGnSilu(32,64,kernel_size=5,stride=4,convnd=nn.Conv1d),
-                                     ConvGnSilu(64,128,kernel_size=5,stride=4,convnd=nn.Conv1d),
-                                     ConvGnSilu(128,256,kernel_size=5,stride=4,convnd=nn.Conv1d),
-                                     ConvGnSilu(256,dec_channels,kernel_size=1,convnd=nn.Conv1d),
-                                     AttentionPool2d(self.K//64,dec_channels,dec_channels//4))
+        self.pre_rnn = nn.Sequential(ConvGnSilu(1, 32, kernel_size=5, convnd=nn.Conv1d),
+                                     ConvGnSilu(32, 64, kernel_size=5,
+                                                stride=4, convnd=nn.Conv1d),
+                                     ConvGnSilu(64, 128, kernel_size=5,
+                                                stride=4, convnd=nn.Conv1d),
+                                     ConvGnSilu(128, 256, kernel_size=5,
+                                                stride=4, convnd=nn.Conv1d),
+                                     ConvGnSilu(256, dec_channels,
+                                                kernel_size=1, convnd=nn.Conv1d),
+                                     AttentionPool2d(self.K//64, dec_channels, dec_channels//4))
         self.attention_rnn = nn.LSTMCell(dec_channels*2, dec_channels)
-        self.attention_layer = Attention(dec_channels, dec_channels, dec_channels)
+        self.attention_layer = Attention(
+            dec_channels, dec_channels, dec_channels)
         self.decoder_rnn = nn.LSTMCell(dec_channels*2, dec_channels, 1)
         self.linear_projection = LinearNorm(dec_channels*2, self.dec_channels)
-        self.gate_layer = LinearNorm(self.dec_channels*2, 1, bias=True, w_init_gain='sigmoid')
+        self.gate_layer = LinearNorm(
+            self.dec_channels*2, 1, bias=True, w_init_gain='sigmoid')
         self.dropout_probability = dropout_probability
 
     def chunk_wav(self, wav):
@@ -51,16 +58,18 @@ class WavDecoder(nn.Module):
         # Pad the last chunk as needed.
         padding_needed = self.K - wavs[-1].shape[-1]
         if padding_needed > 0:
-            wavs[-1] = F.pad(wavs[-1], (0,padding_needed))
+            wavs[-1] = F.pad(wavs[-1], (0, padding_needed))
 
-        wavs = torch.stack(wavs, dim=1)  # wavs.shape = (b,s,K) where s=decoder sequence length
+        # wavs.shape = (b,s,K) where s=decoder sequence length
+        wavs = torch.stack(wavs, dim=1)
         return wavs, padding_needed
- 
+
     def prepare_decoder_inputs(self, inp):
         # inp.shape = (b,s,K) chunked waveform.
-        b,s,K = inp.shape
-        first_frame = torch.zeros(b,1,K).to(inp.device)
-        x = torch.cat([first_frame, inp[:,:-1]], dim=1)  # It is now aligned for teacher forcing.
+        b, s, K = inp.shape
+        first_frame = torch.zeros(b, 1, K).to(inp.device)
+        # It is now aligned for teacher forcing.
+        x = torch.cat([first_frame, inp[:, :-1]], dim=1)
         return x
 
     def initialize_decoder_states(self, memory, mask):
@@ -75,18 +84,25 @@ class WavDecoder(nn.Module):
         B = memory.size(0)
         MAX_TIME = memory.size(1)
 
-        self.attention_hidden = Variable(memory.data.new(B, self.dec_channels).zero_())
-        self.attention_cell = Variable(memory.data.new(B, self.dec_channels).zero_())
+        self.attention_hidden = Variable(
+            memory.data.new(B, self.dec_channels).zero_())
+        self.attention_cell = Variable(
+            memory.data.new(B, self.dec_channels).zero_())
 
-        self.decoder_hidden = Variable(memory.data.new(B, self.dec_channels).zero_())
-        self.decoder_cell = Variable(memory.data.new(B, self.dec_channels).zero_())
+        self.decoder_hidden = Variable(
+            memory.data.new(B, self.dec_channels).zero_())
+        self.decoder_cell = Variable(
+            memory.data.new(B, self.dec_channels).zero_())
 
         self.attention_weights = Variable(memory.data.new(B, MAX_TIME).zero_())
-        self.attention_weights_cum = Variable(memory.data.new(B, MAX_TIME).zero_())
-        self.attention_context = Variable(memory.data.new(B, self.dec_channels).zero_())
+        self.attention_weights_cum = Variable(
+            memory.data.new(B, MAX_TIME).zero_())
+        self.attention_context = Variable(
+            memory.data.new(B, self.dec_channels).zero_())
 
         self.memory = memory
-        self.processed_memory = checkpoint(self.attention_layer.memory_layer, memory)
+        self.processed_memory = checkpoint(
+            self.attention_layer.memory_layer, memory)
         self.mask = mask
 
     def teardown_states(self):
@@ -113,20 +129,28 @@ class WavDecoder(nn.Module):
         attention_weights:
         """
         cell_input = torch.cat((decoder_input, self.attention_context), -1)
-        self.attention_hidden, self.attention_cell = self.attention_rnn(cell_input, (self.attention_hidden, self.attention_cell))
-        self.attention_hidden = F.dropout(self.attention_hidden, self.dropout_probability, self.training)
+        self.attention_hidden, self.attention_cell = self.attention_rnn(
+            cell_input, (self.attention_hidden, self.attention_cell))
+        self.attention_hidden = F.dropout(
+            self.attention_hidden, self.dropout_probability, self.training)
 
-        attention_weights_cat = torch.cat((self.attention_weights.unsqueeze(1), self.attention_weights_cum.unsqueeze(1)), dim=1)
+        attention_weights_cat = torch.cat((self.attention_weights.unsqueeze(
+            1), self.attention_weights_cum.unsqueeze(1)), dim=1)
         self.attention_context, self.attention_weights = checkpoint(self.attention_layer, self.attention_hidden, self.memory,
                                                                     self.processed_memory, attention_weights_cat, self.mask)
 
         self.attention_weights_cum += self.attention_weights
-        decoder_input = torch.cat((self.attention_hidden, self.attention_context), -1)
-        self.decoder_hidden, self.decoder_cell = self.decoder_rnn(decoder_input, (self.decoder_hidden, self.decoder_cell))
-        self.decoder_hidden = F.dropout(self.decoder_hidden, self.dropout_probability, self.training)
+        decoder_input = torch.cat(
+            (self.attention_hidden, self.attention_context), -1)
+        self.decoder_hidden, self.decoder_cell = self.decoder_rnn(
+            decoder_input, (self.decoder_hidden, self.decoder_cell))
+        self.decoder_hidden = F.dropout(
+            self.decoder_hidden, self.dropout_probability, self.training)
 
-        decoder_hidden_attention_context = torch.cat((self.decoder_hidden, self.attention_context), dim=1)
-        decoder_output = checkpoint(self.linear_projection, decoder_hidden_attention_context)
+        decoder_hidden_attention_context = torch.cat(
+            (self.decoder_hidden, self.attention_context), dim=1)
+        decoder_output = checkpoint(
+            self.linear_projection, decoder_hidden_attention_context)
 
         gate_prediction = self.gate_layer(decoder_hidden_attention_context)
         return decoder_output, gate_prediction, self.attention_weights
@@ -137,11 +161,11 @@ class WavDecoder(nn.Module):
         # (T_out, B) -> (B, T_out)
         gate_outputs = torch.stack(gate_outputs, dim=1).repeat(1, self.K)
 
-        b,s,_,K = diffusion_eps.shape
+        b, s, _, K = diffusion_eps.shape
         # (B, S, 2, K) -> (B, 2, S*K)
-        diffusion_eps = diffusion_eps.permute(0,2,1,3).reshape(b, 2, s*K)
+        diffusion_eps = diffusion_eps.permute(0, 2, 1, 3).reshape(b, 2, s*K)
 
-        return diffusion_eps[:,:,:-padding_added], gate_outputs[:,:-padding_added], alignments[:,:-padding_added]
+        return diffusion_eps[:, :, :-padding_added], gate_outputs[:, :-padding_added], alignments[:, :-padding_added]
 
     def forward(self, wav_noised, wav_real, timesteps, text_enc, memory_lengths):
         '''
@@ -155,14 +179,17 @@ class WavDecoder(nn.Module):
         wav_noised, padding_added = self.chunk_wav(wav_noised)
         wav_real, _ = self.chunk_wav(wav_real)
         wav_real = self.prepare_decoder_inputs(wav_real)
-        b,s,K = wav_real.shape
-        wav_real = checkpoint(self.pre_rnn, wav_real.reshape(b*s,1,K)).reshape(b,s,self.dec_channels)
+        b, s, K = wav_real.shape
+        wav_real = checkpoint(self.pre_rnn, wav_real.reshape(
+            b*s, 1, K)).reshape(b, s, self.dec_channels)
 
-        self.initialize_decoder_states(text_enc, mask=~get_mask_from_lengths(memory_lengths))
+        self.initialize_decoder_states(
+            text_enc, mask=~get_mask_from_lengths(memory_lengths))
         decoder_contexts, gate_outputs, alignments = [], [], []
         while len(decoder_contexts) < wav_real.size(1):
             decoder_input = wav_real[:, len(decoder_contexts)]
-            dec_context, gate_output, attention_weights = self.produce_context(decoder_input)
+            dec_context, gate_output, attention_weights = self.produce_context(
+                decoder_input)
             decoder_contexts += [dec_context.squeeze(1)]
             gate_outputs += [gate_output.squeeze(1)]
             alignments += [attention_weights]
@@ -170,12 +197,14 @@ class WavDecoder(nn.Module):
 
         # diffusion_inputs and wavs needs to have the sequence and batch dimensions combined, and needs a channel dimension
         diffusion_emb = torch.stack(decoder_contexts, dim=1)
-        b,s,c = diffusion_emb.shape
-        diffusion_emb = diffusion_emb.reshape(b*s,c)
-        wav_noised = wav_noised.reshape(b*s,1,self.K)
-        diffusion_eps = self.clarifier(wav_noised, timesteps.repeat(s), diffusion_emb).reshape(b,s,2,self.K)
+        b, s, c = diffusion_emb.shape
+        diffusion_emb = diffusion_emb.reshape(b*s, c)
+        wav_noised = wav_noised.reshape(b*s, 1, self.K)
+        diffusion_eps = self.clarifier(wav_noised, timesteps.repeat(
+            s), diffusion_emb).reshape(b, s, 2, self.K)
         # Recombine diffusion outputs across the sequence into a single prediction.
-        diffusion_eps, gate_outputs, alignments = self.recombine(diffusion_eps, gate_outputs, alignments, padding_added)
+        diffusion_eps, gate_outputs, alignments = self.recombine(
+            diffusion_eps, gate_outputs, alignments, padding_added)
         return diffusion_eps, gate_outputs, alignments
 
 
@@ -199,11 +228,11 @@ class WaveTacotron2(nn.Module):
         if self.mask_padding and output_lengths is not None:
             mask_fill = outputs[0].shape[-1]
             mask = ~get_mask_from_lengths(output_lengths, mask_fill)
-            mask = mask.unsqueeze(1).repeat(1,2,1)
+            mask = mask.unsqueeze(1).repeat(1, 2, 1)
 
             outputs[0].data.masked_fill_(mask, 0.0)
             outputs[0] = outputs[0].unsqueeze(1)  # Re-add channel dimension.
-            outputs[1].data.masked_fill_(mask[:,0], 1e3)  # gate energies
+            outputs[1].data.masked_fill_(mask[:, 0], 1e3)  # gate energies
 
         return outputs
 
@@ -214,7 +243,8 @@ class WaveTacotron2(nn.Module):
 
         text_lengths, output_lengths = text_lengths.data, output_lengths.data
         embedded_inputs = self.embedding(text_inputs).transpose(1, 2)
-        encoder_outputs = checkpoint(self.encoder, embedded_inputs, text_lengths)
+        encoder_outputs = checkpoint(
+            self.encoder, embedded_inputs, text_lengths)
         eps_pred, gate_outputs, alignments = self.decoder(
             wavs_diffused, wavs_corrected, timesteps, encoder_outputs, memory_lengths=text_lengths)
 
@@ -234,7 +264,7 @@ if __name__ == '__main__':
     out = tron(wavs_diffused=torch.randn(2, 1, 22000),
                wavs_corrected=torch.randn(2, 1, 22000),
                timesteps=torch.LongTensor([555, 543]),
-               text_inputs=torch.randint(high=24, size=(2,12)),
+               text_inputs=torch.randint(high=24, size=(2, 12)),
                text_lengths=torch.tensor([12, 12]),
                output_lengths=torch.tensor([21995]))
     print([o.shape for o in out])

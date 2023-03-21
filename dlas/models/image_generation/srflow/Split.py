@@ -1,9 +1,8 @@
 import torch
+from dlas.models.image_generation.srflow import thops
+from dlas.models.image_generation.srflow.flow import Conv2dZeros, GaussianDiag
+from dlas.utils.util import opt_get
 from torch import nn as nn
-
-from models.image_generation.srflow import thops
-from models.image_generation.srflow.flow import Conv2dZeros, GaussianDiag
-from utils.util import opt_get
 
 
 class Split2d(nn.Module):
@@ -17,7 +16,8 @@ class Split2d(nn.Module):
                                 out_channels=self.num_channels_consume * 2)
         self.logs_eps = logs_eps
         self.position = position
-        self.gaussian_nll_weight = opt_get(opt, ['networks', 'generator', 'flow', 'gaussian_loss_weight'], 1)
+        self.gaussian_nll_weight = opt_get(
+            opt, ['networks', 'generator', 'flow', 'gaussian_loss_weight'], 1)
 
     def split2d_prior(self, z, ft):
         if ft is not None:
@@ -33,7 +33,7 @@ class Split2d(nn.Module):
             # self.input = input
             z1, z2 = self.split_ratio(input)
             mean, logs = self.split2d_prior(z1, ft)
-            
+
             eps = (z2 - mean) / self.exp_eps(logs)
 
             logdet = logdet + self.get_logdet(logs, mean, z2)
@@ -47,9 +47,9 @@ class Split2d(nn.Module):
             mean, logs = self.split2d_prior(z1, ft)
 
             if eps is None:
-                #print("WARNING: eps is None, generating eps untested functionality!")
+                # print("WARNING: eps is None, generating eps untested functionality!")
                 eps = GaussianDiag.sample(mean, logs, eps_std)
-                #eps = GaussianDiag.sample_eps(mean.shape, eps_std)
+                # eps = GaussianDiag.sample_eps(mean.shape, eps_std)
 
             eps = eps.to(mean.device)
             z2 = mean + self.exp_eps(logs) * eps
@@ -65,5 +65,6 @@ class Split2d(nn.Module):
         return logdet_diff * self.gaussian_nll_weight
 
     def split_ratio(self, input):
-        z1, z2 = input[:, :self.num_channels_pass, ...], input[:, self.num_channels_pass:, ...]
+        z1, z2 = input[:, :self.num_channels_pass, ...], input[:,
+                                                               self.num_channels_pass:, ...]
         return z1, z2

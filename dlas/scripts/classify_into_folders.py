@@ -1,27 +1,27 @@
-import os.path as osp
+import argparse
 import logging
+import os
+import os.path as osp
 import shutil
 import time
-import argparse
 
-import os
-
-import utils
-import utils.options as option
-import utils.util as util
-from trainer.ExtensibleTrainer import ExtensibleTrainer
-from data import create_dataset, create_dataloader
-from tqdm import tqdm
 import torch
 import torchvision
+from tqdm import tqdm
 
+import dlas.utils
+import dlas.utils.options as option
+import dlas.utils.util as util
+from dlas.data import create_dataloader, create_dataset
+from dlas.trainer.ExtensibleTrainer import ExtensibleTrainer
 
 if __name__ == "__main__":
-    #### options
+    # options
     torch.backends.cudnn.benchmark = True
     want_metrics = False
     parser = argparse.ArgumentParser()
-    parser.add_argument('-opt', type=str, help='Path to options YAML file.', default='../options/test_noisy_audio_clips_classifier.yml')
+    parser.add_argument('-opt', type=str, help='Path to options YAML file.',
+                        default='../options/test_noisy_audio_clips_classifier.yml')
     opt = option.parse(parser.parse_args().opt, is_train=False)
     opt = option.dict_to_nonedict(opt)
     utils.util.loaded_options = opt
@@ -34,7 +34,7 @@ if __name__ == "__main__":
     logger = logging.getLogger('base')
     logger.info(option.dict2str(opt))
 
-    #### Create test dataset and dataloader
+    # Create test dataset and dataloader
     test_loaders = []
     for phase, dataset_opt in sorted(opt['datasets'].items()):
         if 'test' in phase:
@@ -67,7 +67,8 @@ if __name__ == "__main__":
                 model.feed_data(data, 0)
                 model.test()
 
-            lbls = torch.nn.functional.softmax(model.eval_state[output_key][0].cpu(), dim=-1)
+            lbls = torch.nn.functional.softmax(
+                model.eval_state[output_key][0].cpu(), dim=-1)
             for k, lbl in enumerate(lbls):
                 lbl = labels[torch.argmax(lbl, dim=0)]
                 src_path = data[path_key][k]
@@ -75,8 +76,8 @@ if __name__ == "__main__":
                 if output_base_dir is not None:
                     dest = os.path.join(output_base_dir, lbl)
                     os.makedirs(dest, exist_ok=True)
-                    shutil.copy(str(src_path), os.path.join(dest, f'{step}_{os.path.basename(str(src_path))}'))
+                    shutil.copy(str(src_path), os.path.join(
+                        dest, f'{step}_{os.path.basename(str(src_path))}'))
                     step += 1
             output_file.flush()
     output_file.close()
-

@@ -1,5 +1,6 @@
 import torch
-from data import create_dataset
+
+from dlas.data import create_dataset
 
 
 # Simple composite dataset that combines multiple other datasets.

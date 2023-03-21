@@ -5,7 +5,7 @@ from glob import glob
 from random import choices
 
 import torch
-from PIL import ImageTk, Image
+from PIL import Image, ImageTk
 
 # Globals used to define state that event handlers might operate on.
 imgs_list = []
@@ -52,7 +52,7 @@ def click(event):
         os.makedirs(ofolder)
         pil_img_1.save(os.path.join(ofolder, "1.jpg"))
         pil_img_2.save(os.path.join(ofolder, "2.jpg"))
-        torch.save([img_loc_1, (x,y)], os.path.join(ofolder, "coords.pth"))
+        torch.save([img_loc_1, (x, y)], os.path.join(ofolder, "coords.pth"))
         img_count = img_count + 1
         mode_select_image_1 = True
         next_images()
@@ -61,11 +61,12 @@ def click(event):
 
 def load_image_into_pane(img_path, pane, size=512):
     pil_img = Image.open(img_path)
-    pil_img = pil_img.resize((size,size))
+    pil_img = pil_img.resize((size, size))
     tk_picture = ImageTk.PhotoImage(pil_img)
     pane.image = tk_picture
     pane.configure(image=tk_picture)
     return pil_img
+
 
 def next_images():
     global imgs_list, widgets, cur_img_1, cur_img_2, pil_img_1, pil_img_2
@@ -75,6 +76,7 @@ def next_images():
     pil_img_1 = load_image_into_pane(cur_img_1, image_widget_1)
     pil_img_2 = load_image_into_pane(cur_img_2, image_widget_2)
 
+
 if __name__ == '__main__':
     os.makedirs(output_location, exist_ok=True)
 
@@ -83,7 +85,8 @@ if __name__ == '__main__':
     window.geometry('1024x620+100+100')
 
     # Load images
-    imgs_list = glob("E:\\4k6k\\datasets\\ns_images\\imagesets\\imageset_1024_square_with_new\\*.jpg")
+    imgs_list = glob(
+        "E:\\4k6k\\datasets\\ns_images\\imagesets\\imageset_1024_square_with_new\\*.jpg")
 
     # Photo view.
     image_widget_1 = tk.Label(window)

@@ -1,8 +1,9 @@
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 
-from models.image_generation.srflow.FlowActNorms import ActNorm2d
+from dlas.models.image_generation.srflow.FlowActNorms import ActNorm2d
+
 from . import thops
 
 
@@ -56,7 +57,8 @@ class Conv2dZeros(nn.Conv2d):
         super().__init__(in_channels, out_channels, kernel_size, stride, padding)
         # logscale_factor
         self.logscale_factor = logscale_factor
-        self.register_parameter("logs", nn.Parameter(torch.zeros(out_channels, 1, 1)))
+        self.register_parameter("logs", nn.Parameter(
+            torch.zeros(out_channels, 1, 1)))
         # init
         self.weight.data.zero_()
         self.bias.data.zero_()

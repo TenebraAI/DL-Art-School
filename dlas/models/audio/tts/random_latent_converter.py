@@ -3,10 +3,10 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch_intermediary as ml
 
-from trainer.networks import register_model
-from utils.util import opt_get
+import dlas.torch_intermediary as ml
+from dlas.trainer.networks import register_model
+from dlas.utils.util import opt_get
 
 
 def fused_leaky_relu(input, bias=None, negative_slope=0.2, scale=2 ** 0.5):
@@ -61,4 +61,4 @@ def register_random_latent_converter(opt_net, opt):
 
 if __name__ == '__main__':
     model = RandomLatentConverter(512)
-    model(torch.randn(5,512))
+    model(torch.randn(5, 512))

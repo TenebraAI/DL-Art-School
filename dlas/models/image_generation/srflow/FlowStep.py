@@ -1,13 +1,14 @@
 import torch
 from torch import nn as nn
 
-import models.image_generation.srflow.Permutations
-import models.image_generation.srflow.FlowAffineCouplingsAblation
-import models.image_generation.srflow.FlowActNorms
+import dlas.models.image_generation.srflow.FlowActNorms
+import dlas.models.image_generation.srflow.FlowAffineCouplingsAblation
+import dlas.models.image_generation.srflow.Permutations
 
 
 def getConditional(rrdbResults, position):
-    img_ft = rrdbResults if isinstance(rrdbResults, torch.Tensor) else rrdbResults[position]
+    img_ft = rrdbResults if isinstance(
+        rrdbResults, torch.Tensor) else rrdbResults[position]
     return img_ft
 
 
@@ -46,7 +47,8 @@ class FlowStep(nn.Module):
         self.acOpt = acOpt
 
         # 1. actnorm
-        self.actnorm = models.image_generation.srflow.FlowActNorms.ActNorm2d(in_channels, actnorm_scale)
+        self.actnorm = models.image_generation.srflow.FlowActNorms.ActNorm2d(
+            in_channels, actnorm_scale)
 
         # 2. permute
         if flow_permutation == "invconv":
@@ -75,7 +77,8 @@ class FlowStep(nn.Module):
         # 1. actnorm
         if self.norm_type == "ConditionalActNormImageInjector":
             img_ft = getConditional(rrdbResults, self.position)
-            z, logdet = self.actnorm(z, img_ft=img_ft, logdet=logdet, reverse=False)
+            z, logdet = self.actnorm(
+                z, img_ft=img_ft, logdet=logdet, reverse=False)
         elif self.norm_type == "noNorm":
             pass
         else:
@@ -90,7 +93,8 @@ class FlowStep(nn.Module):
         # 3. coupling
         if need_features or self.flow_coupling in ["condAffine", "condFtAffine", "condNormAffine"]:
             img_ft = getConditional(rrdbResults, self.position)
-            z, logdet = self.affine(input=z, logdet=logdet, reverse=False, ft=img_ft)
+            z, logdet = self.affine(
+                input=z, logdet=logdet, reverse=False, ft=img_ft)
         return z, logdet
 
     def reverse_flow(self, z, logdet, rrdbResults=None):
@@ -100,7 +104,8 @@ class FlowStep(nn.Module):
         # 1.coupling
         if need_features or self.flow_coupling in ["condAffine", "condFtAffine", "condNormAffine"]:
             img_ft = getConditional(rrdbResults, self.position)
-            z, logdet = self.affine(input=z, logdet=logdet, reverse=True, ft=img_ft)
+            z, logdet = self.affine(
+                input=z, logdet=logdet, reverse=True, ft=img_ft)
 
         # 2. permute
         z, logdet = FlowStep.FlowPermutation[self.flow_permutation](

@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
-from trainer.networks import register_model
-from utils.util import opt_get
+
+from dlas.trainer.networks import register_model
+from dlas.utils.util import opt_get
 
 
 def encoder_for_type(type, master_dim, enc_kwargs):
-    from x_clip.x_clip import VisionTransformer, TextTransformer
+    from x_clip.x_clip import TextTransformer, VisionTransformer
     if type == 'image':
         # xclip_kwargs: image_size, patch_size, channels, depth, heads
         return VisionTransformer(dim=master_dim, **enc_kwargs)
@@ -47,7 +48,7 @@ class XClipWrapper(nn.Module):
     def forward(self, seq1, seq2, return_loss=False):
         seq1_mask = torch.rand_like(seq1.float()) > self.mask_seq1_percentage
         # TODO: add support for seq2 mask..
-        #seq2_mask = torch.rand_like(seq2.float()) > self.mask_seq2_percentage
+        # seq2_mask = torch.rand_like(seq2.float()) > self.mask_seq2_percentage
         return self.clip(seq1, seq2, seq1_mask, return_loss=return_loss)
 
 
@@ -55,9 +56,12 @@ class XClipWrapper(nn.Module):
 def register_clip(opt_net, opt):
     return XClipWrapper(**opt_get(opt_net, ['kwargs'], {}))
 
+
 if __name__ == '__main__':
     model = XClipWrapper(enc1_type='tokens', enc2_type='tokens',
-                         enc1_kwargs={'num_tokens': 256, 'max_seq_len': 200, 'depth': 8, 'heads': 8},
+                         enc1_kwargs={'num_tokens': 256,
+                                      'max_seq_len': 200, 'depth': 8, 'heads': 8},
                          enc2_kwargs={'num_tokens': 8192, 'max_seq_len': 250, 'depth': 8, 'heads': 8})
-    loss = model(torch.randint(0,256, (2,200)),  torch.randint(0,8192, (2,250)), True)
+    loss = model(torch.randint(0, 256, (2, 200)),
+                 torch.randint(0, 8192, (2, 250)), True)
     print(loss)

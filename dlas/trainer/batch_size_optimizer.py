@@ -1,11 +1,11 @@
-import math
+
 import random
 
 import torch
 from torch import distributed
 from torch._C._distributed_c10d import ReduceOp
 
-from utils.util import opt_get
+from dlas.utils.util import opt_get
 
 
 def create_batch_size_optimizer(opt_train):
@@ -50,7 +50,8 @@ class GradientDirectionOptimizer(BatchSizeOptimizer):
         self.opt = opt_train['batch_size_optimizer']
         self.max_full_batches = opt_get(self.opt, ['max_full_batches'], 10)
         self.parameters_to_poll = opt_get(self.opt, ['poll_parameters'], 8)
-        self.recalculate_directions_every = opt_get(self.opt, ['recalculate_directions_steps'], 1)
+        self.recalculate_directions_every = opt_get(
+            self.opt, ['recalculate_directions_steps'], 1)
         self.current_model = None
 
         # Metrics
@@ -75,9 +76,12 @@ class GradientDirectionOptimizer(BatchSizeOptimizer):
             all_params = list(filter(lambda t: '.weight' in t[0] and not hasattr(t[1].requires_grad, 'DO_NOT_TRAIN'),
                                      list(model.named_parameters())))  # Extracts weight parameters. Who cares about biases anyways? :)
             num_params = min(len(all_params), self.parameters_to_poll)
-            model._gradient_direction_optimizer_params = random.sample(all_params, num_params)
-            model._gradient_direction_optimizer_prior_directions = [0 for _ in range(num_params)]
-            model._gradient_direction_optimizer_stopped_decreasing = [False for _ in range(num_params)]
+            model._gradient_direction_optimizer_params = random.sample(
+                all_params, num_params)
+            model._gradient_direction_optimizer_prior_directions = [
+                0 for _ in range(num_params)]
+            model._gradient_direction_optimizer_stopped_decreasing = [
+                False for _ in range(num_params)]
             model._gradient_direction_optimizer_prior_grads = None
             model._gradient_direction_optimizer_step = 0
             model._gradient_direction_optimizer_finished = False
@@ -86,17 +90,22 @@ class GradientDirectionOptimizer(BatchSizeOptimizer):
     def should_step(self, it):
         model = self.current_model
         model._gradient_direction_optimizer_step += 1
-        cur_grads = [grad(p) for k, p in model._gradient_direction_optimizer_params]
+        cur_grads = [grad(p)
+                     for k, p in model._gradient_direction_optimizer_params]
         for cg in cur_grads:
             if torch.any(torch.isnan(cg)):
                 print("BSO: found NaN. Passing it off to the GradScaler..")
                 return True
         if model._gradient_direction_optimizer_prior_grads is not None:
-            cur_dir = [self.vector_angle(lgrad, cgrad) for lgrad, cgrad in zip(model._gradient_direction_optimizer_prior_grads, cur_grads)]
-            delta_dir = [(cdir - ldir) for cdir, ldir in zip(cur_dir, model._gradient_direction_optimizer_prior_directions)]
+            cur_dir = [self.vector_angle(lgrad, cgrad) for lgrad, cgrad in zip(
+                model._gradient_direction_optimizer_prior_grads, cur_grads)]
+            delta_dir = [(cdir - ldir) for cdir, ldir in zip(cur_dir,
+                                                             model._gradient_direction_optimizer_prior_directions)]
             model._gradient_direction_optimizer_prior_directions = cur_dir
-            model._gradient_direction_optimizer_stopped_decreasing = [sd or dd < 0 for sd, dd in zip(model._gradient_direction_optimizer_stopped_decreasing, delta_dir)]
-            all_finished = all(model._gradient_direction_optimizer_stopped_decreasing)
+            model._gradient_direction_optimizer_stopped_decreasing = [sd or dd < 0 for sd, dd in zip(
+                model._gradient_direction_optimizer_stopped_decreasing, delta_dir)]
+            all_finished = all(
+                model._gradient_direction_optimizer_stopped_decreasing)
 
             # For distributed optimizers, like ZeroRedundancyAdam, we need to reach a consensus as to whether or not to reduce.
             if distributed.is_initialized() and distributed.get_world_size() > 1:
@@ -107,7 +116,8 @@ class GradientDirectionOptimizer(BatchSizeOptimizer):
             if all_finished or model._gradient_direction_optimizer_step >= self.max_full_batches:
                 # <0 means the gradient direction is getting larger. Halt batch accumulation here.
                 model._gradient_direction_optimizer_finished = True
-                self.record_number_steps(model._gradient_direction_optimizer_step)
+                self.record_number_steps(
+                    model._gradient_direction_optimizer_step)
                 # Fix the gradients. We've accumulated _gradient_direction_optimizer_step steps total, so we need to divide the grads by that.
                 for p in model.parameters():
                     if p.requires_grad:
@@ -120,13 +130,16 @@ class GradientDirectionOptimizer(BatchSizeOptimizer):
         self.last_number_iterations[self.last_number_iterations_i] = steps
         if self.last_number_iterations_i == self.last_number_iterations.shape[0]-1:
             self.last_number_iterations_filled = True
-        self.last_number_iterations_i = (self.last_number_iterations_i + 1) % self.last_number_iterations.shape[0]
+        self.last_number_iterations_i = (
+            self.last_number_iterations_i + 1) % self.last_number_iterations.shape[0]
         self.steps_taken += 1
 
     def get_statistics(self):
         res = {"batch_size_opt_total_steps": self.steps_taken}
         if self.last_number_iterations_filled:
-            res["batch_size_opt_avg_iterations_per_step"] = self.last_number_iterations.mean().item()
+            res["batch_size_opt_avg_iterations_per_step"] = self.last_number_iterations.mean(
+            ).item()
         else:
-            res["batch_size_opt_avg_iterations_per_step"] = self.last_number_iterations[:self.last_number_iterations_i].mean().item()
+            res["batch_size_opt_avg_iterations_per_step"] = self.last_number_iterations[:
+                                                                                        self.last_number_iterations_i].mean().item()
         return res

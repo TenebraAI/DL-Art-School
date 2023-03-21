@@ -1,16 +1,20 @@
 # Tool that can be used to add a new layer into an existing model save file. Primarily useful for "progressive"
 # models which can be trained piecemeal.
 
-from utils import options as option
-from models import create_model
-import torch
 import os
+
+import torch
+
+from dlas.models import create_model
+from dlas.utils import options as option
+
 
 def get_model_for_opt_file(filename):
     opt = option.parse(filename, is_train=True)
     opt = option.dict_to_nonedict(opt)
     model = create_model(opt)
     return model, opt
+
 
 def copy_state_dict_list(l_from, l_to):
     for i, v in enumerate(l_from):
@@ -20,6 +24,7 @@ def copy_state_dict_list(l_from, l_to):
             copy_state_dict(v, l_to[i])
         else:
             l_to[i] = v
+
 
 def copy_state_dict(dict_from, dict_to):
     for k in dict_from.keys():
@@ -40,10 +45,13 @@ def copy_state_dict(dict_from, dict_to):
             dict_to[k] = dict_from[k]
     return dict_to
 
+
 if __name__ == "__main__":
     os.chdir("..")
-    model_from, opt_from = get_model_for_opt_file("../options/train_imgset_pixgan_progressive_srg2.yml")
-    model_to, _ = get_model_for_opt_file("../options/train_imgset_pixgan_progressive_srg2_.yml")
+    model_from, opt_from = get_model_for_opt_file(
+        "../options/train_imgset_pixgan_progressive_srg2.yml")
+    model_to, _ = get_model_for_opt_file(
+        "../options/train_imgset_pixgan_progressive_srg2_.yml")
 
     '''
     model_to.netG.module.update_for_step(1000000000000)
@@ -56,18 +64,14 @@ if __name__ == "__main__":
     model_to.optimizer_D.step()
     '''
 
-    torch.save(copy_state_dict(model_from.netG.state_dict(), model_to.netG.state_dict()), "converted_g.pth")
-    torch.save(copy_state_dict(model_from.netD.state_dict(), model_to.netD.state_dict()), "converted_d.pth")
+    torch.save(copy_state_dict(model_from.netG.state_dict(),
+               model_to.netG.state_dict()), "converted_g.pth")
+    torch.save(copy_state_dict(model_from.netD.state_dict(),
+               model_to.netD.state_dict()), "converted_d.pth")
 
     # Also convert the state.
     resume_state_from = torch.load(opt_from['path']['resume_state'])
     resume_state_to = model_to.save_training_state({}, return_state=True)
-    resume_state_from['optimizers'][0]['param_groups'].append(resume_state_to['optimizers'][0]['param_groups'][-1])
+    resume_state_from['optimizers'][0]['param_groups'].append(
+        resume_state_to['optimizers'][0]['param_groups'][-1])
     torch.save(resume_state_from, "converted_state.pth")
-
-
-
-
-
-
-

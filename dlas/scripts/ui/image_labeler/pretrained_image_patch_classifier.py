@@ -1,11 +1,11 @@
 import logging
 import os.path as osp
 
-import utils
-import utils.options as option
-import utils.util as util
-from data import create_dataset, create_dataloader
-from trainer.ExtensibleTrainer import ExtensibleTrainer
+import dlas.utils
+import dlas.utils.options as option
+import dlas.utils.util as util
+from dlas.data import create_dataloader, create_dataset
+from dlas.trainer.ExtensibleTrainer import ExtensibleTrainer
 
 
 class PretrainedImagePatchClassifier:
@@ -24,7 +24,7 @@ class PretrainedImagePatchClassifier:
         logger = logging.getLogger('base')
         logger.info(option.dict2str(opt))
 
-        #### Create test dataset and dataloader
+        # Create test dataset and dataloader
         dataset_opt = list(opt['datasets'].values())[0]
         # Remove labeling features from the dataset config and wrappers.
         if 'dataset' in dataset_opt.keys():
@@ -49,4 +49,3 @@ class PretrainedImagePatchClassifier:
             hq = data['hq'].to('cuda')
             res = self.gen(hq)
             yield hq, res, data
-

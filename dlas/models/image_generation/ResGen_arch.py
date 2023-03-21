@@ -1,10 +1,10 @@
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 import torch.nn.functional as F
 
-
-__all__ = ['FixupResNet', 'fixup_resnet18', 'fixup_resnet34', 'fixup_resnet50', 'fixup_resnet101', 'fixup_resnet152']
+__all__ = ['FixupResNet', 'fixup_resnet18', 'fixup_resnet34',
+           'fixup_resnet50', 'fixup_resnet101', 'fixup_resnet152']
 
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -12,15 +12,18 @@ def conv3x3(in_planes, out_planes, stride=1):
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
 
+
 def conv5x5(in_planes, out_planes, stride=1):
     """5x5 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=5, stride=stride,
                      padding=2, bias=False)
 
+
 def conv7x7(in_planes, out_planes, stride=1):
     """7x7 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=7, stride=stride,
                      padding=3, bias=False)
+
 
 def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution"""
@@ -67,7 +70,8 @@ class FixupResNet(nn.Module):
     def __init__(self, block, layers, upscale_applications=2, num_filters=64, inject_noise=False):
         super(FixupResNet, self).__init__()
         self.inject_noise = inject_noise
-        self.num_layers = sum(layers) + layers[-1] * (upscale_applications - 1)  # The last layer is applied repeatedly to achieve high level SR.
+        # The last layer is applied repeatedly to achieve high level SR.
+        self.num_layers = sum(layers) + layers[-1] * (upscale_applications - 1)
         self.inplanes = num_filters
         self.upscale_applications = upscale_applications
         # Part 1 - Process raw input image. Most denoising should appear here and this should be the most complicated
@@ -77,7 +81,8 @@ class FixupResNet(nn.Module):
         self.bias1 = nn.Parameter(torch.zeros(1))
         self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
         self.layer1 = self._make_layer(block, num_filters, layers[0], stride=1)
-        self.skip1 = nn.Conv2d(num_filters, 3, kernel_size=5, stride=1, padding=2, bias=False)
+        self.skip1 = nn.Conv2d(num_filters, 3, kernel_size=5,
+                               stride=1, padding=2, bias=False)
         self.skip1_bias = nn.Parameter(torch.zeros(1))
 
         # Part 2 - This is the upsampler core. It consists of a normal multiplicative conv followed by several residual
@@ -87,26 +92,31 @@ class FixupResNet(nn.Module):
         self.nf2 = int(num_filters/4)
         # This part isn't repeated. It de-filters the output from the previous step to fit the filter size used in the
         # upsampler-conv.
-        self.upsampler_conv = nn.Conv2d(num_filters, self.nf2, kernel_size=3, stride=1, padding=1, bias=False)
+        self.upsampler_conv = nn.Conv2d(
+            num_filters, self.nf2, kernel_size=3, stride=1, padding=1, bias=False)
         self.uc_bias = nn.Parameter(torch.zeros(1))
         self.inplanes = self.nf2
 
         if layers[1] > 0:
             # This is the repeated part.
-            self.layer2 = self._make_layer(block, int(self.nf2), layers[1], stride=1, conv_type=conv5x5)
-            self.skip2 = nn.Conv2d(self.nf2, 3, kernel_size=5, stride=1, padding=2, bias=False)
+            self.layer2 = self._make_layer(block, int(
+                self.nf2), layers[1], stride=1, conv_type=conv5x5)
+            self.skip2 = nn.Conv2d(
+                self.nf2, 3, kernel_size=5, stride=1, padding=2, bias=False)
             self.skip2_bias = nn.Parameter(torch.zeros(1))
 
-        self.final_defilter = nn.Conv2d(self.nf2, 3, kernel_size=5, stride=1, padding=2, bias=True)
+        self.final_defilter = nn.Conv2d(
+            self.nf2, 3, kernel_size=5, stride=1, padding=2, bias=True)
         self.bias2 = nn.Parameter(torch.zeros(1))
 
         for m in self.modules():
             if isinstance(m, FixupBasicBlock):
-                nn.init.normal_(m.conv1.weight, mean=0, std=np.sqrt(2 / (m.conv1.weight.shape[0] * np.prod(m.conv1.weight.shape[2:]))) * self.num_layers ** (-0.5))
+                nn.init.normal_(m.conv1.weight, mean=0, std=np.sqrt(
+                    2 / (m.conv1.weight.shape[0] * np.prod(m.conv1.weight.shape[2:]))) * self.num_layers ** (-0.5))
                 nn.init.constant_(m.conv2.weight, 0)
                 if m.downsample is not None:
-                    nn.init.normal_(m.downsample.weight, mean=0, std=np.sqrt(2 / (m.downsample.weight.shape[0] * np.prod(m.downsample.weight.shape[2:]))))
-
+                    nn.init.normal_(m.downsample.weight, mean=0, std=np.sqrt(
+                        2 / (m.downsample.weight.shape[0] * np.prod(m.downsample.weight.shape[2:]))))
 
     def _make_layer(self, block, planes, blocks, stride=1, conv_type=conv3x3):
         defilter = None
@@ -145,6 +155,7 @@ class FixupResNet(nn.Module):
         x = self.final_defilter(x) + self.bias2
         return x, skip_med, skip_lo
 
+
 class FixupResNetV2(FixupResNet):
     def __init__(self, **kwargs):
         super(FixupResNetV2, self).__init__(**kwargs)
@@ -154,10 +165,12 @@ class FixupResNetV2(FixupResNet):
         self.skip2 = None
         self.skip2_bias = None
         # The new filter-to-image stack will be 2 conv layers deep, not 1.
-        self.final_process = nn.Conv2d(self.nf2, self.nf2, kernel_size=5, stride=1, padding=2, bias=True)
+        self.final_process = nn.Conv2d(
+            self.nf2, self.nf2, kernel_size=5, stride=1, padding=2, bias=True)
         self.bias2 = nn.Parameter(torch.zeros(1))
         self.fp_bn = nn.BatchNorm2d(self.nf2)
-        self.final_defilter = nn.Conv2d(self.nf2, 3, kernel_size=3, stride=1, padding=1, bias=True)
+        self.final_defilter = nn.Conv2d(
+            self.nf2, 3, kernel_size=3, stride=1, padding=1, bias=True)
         self.bias3 = nn.Parameter(torch.zeros(1))
 
     def filter_to_image(self, filter):
@@ -198,11 +211,13 @@ class FixupResNetV2(FixupResNet):
 
         return x, skip_med, skip_lo
 
+
 def fixup_resnet34(nb_denoiser=20, nb_upsampler=10, **kwargs):
     """Constructs a Fixup-ResNet-34 model.
     """
     model = FixupResNet(FixupBasicBlock, [nb_denoiser, nb_upsampler], **kwargs)
     return model
+
 
 def fixup_resnet34_v2(nb_denoiser=20, nb_upsampler=10, **kwargs):
     """Constructs a Fixup-ResNet-34 model.

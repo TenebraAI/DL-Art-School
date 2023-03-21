@@ -1,5 +1,5 @@
-#import tensorflow as tf
-from models.audio.tts.tacotron2.text import symbols
+# import tensorflow as tf
+from dlas.models.audio.tts.tacotron2.text import symbols
 
 
 def create_hparams(hparams_string=None, verbose=False):
@@ -33,7 +33,8 @@ def create_hparams(hparams_string=None, verbose=False):
         # Audio Parameters             #
         ################################
         max_wav_value=32768.0,
-        input_sample_rate=22050,  # When different from sampling_rate, dataset automatically interpolates to sampling_rate
+        # When different from sampling_rate, dataset automatically interpolates to sampling_rate
+        input_sample_rate=22050,
         sampling_rate=22050,
         filter_length=1024,
         hop_length=256,  # This means a MEL is 1/256th the equivalent audio.

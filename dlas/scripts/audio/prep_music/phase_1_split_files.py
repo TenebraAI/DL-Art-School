@@ -13,8 +13,8 @@ import torch
 import torchaudio
 from tqdm import tqdm
 
-from data.util import find_audio_files, find_files_of_type
-from utils.util import load_audio
+from dlas.data.util import find_audio_files, find_files_of_type
+from dlas.utils.util import load_audio
 
 
 def report_progress(progress_file, file):
@@ -35,23 +35,30 @@ def process_file(file, base_path, output_path, progress_file, duration_per_clip,
         report_progress(progress_file, file)
         return
 
-    outdir = os.path.join(output_path, f'{os.path.relpath(file, base_path)[:-4]}').replace('.', '').strip()
+    outdir = os.path.join(
+        output_path, f'{os.path.relpath(file, base_path)[:-4]}').replace('.', '').strip()
     os.makedirs(outdir, exist_ok=True)
     splits = torch.split(audio, duration_per_clip * sampling_rate, dim=-1)
     for i, spl in enumerate(splits):
         if spl.shape[-1] != duration_per_clip*sampling_rate:
             continue  # In general, this just means "skip the last item".
-        torchaudio.save(f'{outdir}/{i:05d}.wav', spl.unsqueeze(0), sampling_rate, encoding="PCM_S")
+        torchaudio.save(f'{outdir}/{i:05d}.wav',
+                        spl.unsqueeze(0), sampling_rate, encoding="PCM_S")
     report_progress(progress_file, file)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-path', type=str, help='Path to search for files', default='Y:\\sources\\soundcloud-mixes\\mixes2')
-    parser.add_argument('-progress_file', type=str, help='Place to store all files that have already been processed', default='Y:\\sources\\soundcloud-mixes\\mixes2\\already_processed.txt')
-    parser.add_argument('-output_path', type=str, help='Path for output files', default='Y:\\split\\soundcloud-mixes2')
-    parser.add_argument('-num_threads', type=int, help='Number of concurrent workers processing files.', default=4)
-    parser.add_argument('-duration', type=int, help='Duration per clip in seconds', default=30)
+    parser.add_argument('-path', type=str, help='Path to search for files',
+                        default='Y:\\sources\\soundcloud-mixes\\mixes2')
+    parser.add_argument('-progress_file', type=str, help='Place to store all files that have already been processed',
+                        default='Y:\\sources\\soundcloud-mixes\\mixes2\\already_processed.txt')
+    parser.add_argument('-output_path', type=str, help='Path for output files',
+                        default='Y:\\split\\soundcloud-mixes2')
+    parser.add_argument('-num_threads', type=int,
+                        help='Number of concurrent workers processing files.', default=4)
+    parser.add_argument('-duration', type=int,
+                        help='Duration per clip in seconds', default=30)
     args = parser.parse_args()
 
     processed_files = set()

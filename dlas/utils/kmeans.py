@@ -6,7 +6,6 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-
 # ToDo: Can't choose a cluster if two points are too close to each other, that's where the nan come from
 
 
@@ -84,11 +83,12 @@ def kmeans(
         initial_state_pre = initial_state.clone()
 
         for index in range(num_clusters):
-            selected = torch.nonzero(choice_cluster == index).squeeze().to(device)
+            selected = torch.nonzero(
+                choice_cluster == index).squeeze().to(device)
             selected = torch.index_select(X, 0, selected)
             if gravity_limit_per_iter and len(selected) > gravity_limit_per_iter:
                 ch = random.randint(0, len(selected)-gravity_limit_per_iter)
-                selected=selected[ch:ch+gravity_limit_per_iter]
+                selected = selected[ch:ch+gravity_limit_per_iter]
             initial_state[index] = selected.mean(dim=0)
 
         center_shift = torch.sum(

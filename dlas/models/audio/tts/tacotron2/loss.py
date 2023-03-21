@@ -1,6 +1,6 @@
 from torch import nn
 
-from trainer.losses import ConfigurableLoss
+from dlas.trainer.losses import ConfigurableLoss
 
 
 class Tacotron2Loss(ConfigurableLoss):
@@ -20,7 +20,8 @@ class Tacotron2Loss(ConfigurableLoss):
         gate_target.requires_grad = False
         gate_target = gate_target.view(-1, 1)
 
-        mel_out, mel_out_postnet, gate_out = state[self.mel_output_key], state[self.mel_output_postnet_key], state[self.gate_output_key]
+        mel_out, mel_out_postnet, gate_out = state[self.mel_output_key], state[
+            self.mel_output_postnet_key], state[self.gate_output_key]
         gate_out = gate_out.view(-1, 1)
         mel_loss = nn.MSELoss()(mel_out, mel_target) + \
             nn.MSELoss()(mel_out_postnet, mel_target)

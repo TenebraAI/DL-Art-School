@@ -4,18 +4,21 @@ from time import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch_intermediary as ml
 
-from models.arch_util import ResBlock
-from models.audio.music.gpt_music2 import UpperEncoder, GptMusicLower
-from models.audio.music.music_quantizer2 import MusicQuantizer2
-from models.audio.tts.lucidrains_dvae import DiscreteVAE
-from models.diffusion.nn import timestep_embedding, normalization, zero_module, conv_nd, linear
-from models.diffusion.unet_diffusion import TimestepBlock
-from models.lucidrains.x_transformers import Encoder, Attention, RMSScaleShiftNorm, RotaryEmbedding, \
-    FeedForward
-from trainer.networks import register_model
-from utils.util import checkpoint, print_network
+import dlas.torch_intermediary as ml
+from dlas.models.arch_util import ResBlock
+from dlas.models.audio.music.gpt_music2 import GptMusicLower, UpperEncoder
+from dlas.models.audio.music.music_quantizer2 import MusicQuantizer2
+from dlas.models.audio.tts.lucidrains_dvae import DiscreteVAE
+from dlas.models.diffusion.nn import (conv_nd, linear, normalization,
+                                      timestep_embedding, zero_module)
+from dlas.models.diffusion.unet_diffusion import TimestepBlock
+from dlas.models.lucidrains.x_transformers import (Attention, Encoder,
+                                                   FeedForward,
+                                                   RMSScaleShiftNorm,
+                                                   RotaryEmbedding)
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint, print_network
 
 
 def is_latent(t):

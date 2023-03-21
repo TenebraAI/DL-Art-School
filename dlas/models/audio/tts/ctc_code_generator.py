@@ -3,12 +3,12 @@ from random import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch_intermediary as ml
 
-from models.audio.tts.unet_diffusion_tts7 import CheckpointedLayer
-from models.lucidrains.x_transformers import Encoder
-from trainer.networks import register_model
-from utils.util import opt_get
+import dlas.torch_intermediary as ml
+from dlas.models.audio.tts.unet_diffusion_tts7 import CheckpointedLayer
+from dlas.models.lucidrains.x_transformers import Encoder
+from dlas.trainer.networks import register_model
+from dlas.utils.util import opt_get
 
 
 class CheckpointedXTransformerEncoder(nn.Module):
@@ -16,6 +16,7 @@ class CheckpointedXTransformerEncoder(nn.Module):
     Wraps a ContinuousTransformerWrapper and applies CheckpointedLayer to each layer and permutes from channels-mid
     to channels-last that XTransformer expects.
     """
+
     def __init__(self, **xtransformer_kwargs):
         super().__init__()
         self.transformer = XTransformer(**xtransformer_kwargs)
@@ -23,7 +24,8 @@ class CheckpointedXTransformerEncoder(nn.Module):
         for xform in [self.transformer.encoder, self.transformer.decoder.net]:
             for i in range(len(xform.attn_layers.layers)):
                 n, b, r = xform.attn_layers.layers[i]
-                xform.attn_layers.layers[i] = nn.ModuleList([n, CheckpointedLayer(b), r])
+                xform.attn_layers.layers[i] = nn.ModuleList(
+                    [n, CheckpointedLayer(b), r])
 
     def forward(self, *args, **kwargs):
         return self.transformer(*args, **kwargs)
@@ -45,20 +47,21 @@ class CtcCodeGenerator(nn.Module):
         self.recursive_embedding = ml.Embedding(pred_codes, model_dim)
         self.mask_embedding = nn.Parameter(torch.randn(model_dim))
         self.encoder = Encoder(
-                    dim=model_dim,
-                    depth=layers,
-                    heads=model_dim//64,
-                    ff_dropout=dropout,
-                    attn_dropout=dropout,
-                    use_rmsnorm=True,
-                    ff_glu=True,
-                    rotary_pos_emb=True,
-                )
+            dim=model_dim,
+            depth=layers,
+            heads=model_dim//64,
+            ff_dropout=dropout,
+            attn_dropout=dropout,
+            use_rmsnorm=True,
+            ff_glu=True,
+            rotary_pos_emb=True,
+        )
         self.pred_head = ml.Linear(model_dim, pred_codes)
         self.confidence_head = ml.Linear(model_dim, 1)
 
     def inference(self, codes, pads, repeats):
-        position_h = self.position_embedding(torch.arange(0, codes.shape[-1], device=codes.device))
+        position_h = self.position_embedding(
+            torch.arange(0, codes.shape[-1], device=codes.device))
         codes_h = self.codes_embedding(codes)
 
         labels = pads + repeats * self.max_pad
@@ -83,13 +86,15 @@ class CtcCodeGenerator(nn.Module):
             print(f"Got unexpectedly long pads. Max: {pads.max()}, {pads}")
             pads = torch.clip(pads, 0, self.max_pad)
         if repeats.max() > self.max_repeat:
-            print(f"Got unexpectedly long repeats. Max: {repeats.max()}, {repeats}")
+            print(
+                f"Got unexpectedly long repeats. Max: {repeats.max()}, {repeats}")
             repeats = torch.clip(repeats, 0, self.max_repeat)
         assert codes.max() < self.ctc_codes, codes.max()
 
         labels = pads + repeats * self.max_pad
 
-        position_h = self.position_embedding(torch.arange(0, codes.shape[-1], device=codes.device))
+        position_h = self.position_embedding(
+            torch.arange(0, codes.shape[-1], device=codes.device))
         codes_h = self.codes_embedding(codes)
         recursive_h = self.recursive_embedding(labels)
 
@@ -101,12 +106,14 @@ class CtcCodeGenerator(nn.Module):
 
         h = self.encoder(position_h + codes_h + recursive_h)
         pred_logits = self.pred_head(h)
-        loss = F.cross_entropy(pred_logits.permute(0,2,1), labels, reduce=False)
+        loss = F.cross_entropy(pred_logits.permute(
+            0, 2, 1), labels, reduce=False)
 
         confidences = self.confidence_head(h).squeeze(-1)
         confidences = F.softmax(confidences * mask, dim=-1)
         confidence_loss = loss * confidences
-        loss = loss / loss.shape[-1]  # This balances the confidence_loss and loss.
+        # This balances the confidence_loss and loss.
+        loss = loss / loss.shape[-1]
 
         return loss.mean(), confidence_loss.mean()
 
@@ -118,8 +125,8 @@ def register_ctc_code_generator(opt_net, opt):
 
 if __name__ == '__main__':
     model = CtcCodeGenerator()
-    inps = torch.randint(0,36, (4, 300))
-    pads = torch.randint(0,100, (4,300))
-    repeats = torch.randint(0,20, (4,300))
+    inps = torch.randint(0, 36, (4, 300))
+    pads = torch.randint(0, 100, (4, 300))
+    repeats = torch.randint(0, 20, (4, 300))
     loss = model(inps, pads, repeats)
     print(loss.shape)

@@ -19,13 +19,12 @@
 
 
 import torch
+import torch.distributed as distributed
 from torch import nn
 from torch.nn import functional as F
 
-import torch.distributed as distributed
-
-from trainer.networks import register_model
-from utils.util import checkpoint, opt_get
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint, opt_get
 
 
 class Quantize(nn.Module):
@@ -69,10 +68,12 @@ class Quantize(nn.Module):
             self.cluster_size.data.mul_(self.decay).add_(
                 embed_onehot_sum, alpha=1 - self.decay
             )
-            self.embed_avg.data.mul_(self.decay).add_(embed_sum, alpha=1 - self.decay)
+            self.embed_avg.data.mul_(self.decay).add_(
+                embed_sum, alpha=1 - self.decay)
             n = self.cluster_size.sum()
             cluster_size = (
-                (self.cluster_size + self.eps) / (n + self.n_embed * self.eps) * n
+                (self.cluster_size + self.eps) /
+                (n + self.n_embed * self.eps) * n
             )
             embed_normalized = self.embed_avg / cluster_size.unsqueeze(0)
             self.embed.data.copy_(embed_normalized)
@@ -156,7 +157,8 @@ class Decoder(nn.Module):
         if stride == 4:
             blocks.extend(
                 [
-                    conv_transpose_module(channel, channel // 2, 4, stride=2, padding=1),
+                    conv_transpose_module(
+                        channel, channel // 2, 4, stride=2, padding=1),
                     nn.ReLU(inplace=True),
                     conv_transpose_module(
                         channel // 2, out_channel, 4, stride=2, padding=1
@@ -166,7 +168,8 @@ class Decoder(nn.Module):
 
         elif stride == 2:
             blocks.append(
-                conv_transpose_module(channel, out_channel, 4, stride=2, padding=1)
+                conv_transpose_module(
+                    channel, out_channel, 4, stride=2, padding=1)
             )
 
         self.blocks = nn.Sequential(*blocks)
@@ -194,14 +197,17 @@ class VQVAE(nn.Module):
         in_channel = abs(in_channel)
 
         self.codebook_size = codebook_size
-        self.enc_b = Encoder(in_channel, channel, n_res_block, n_res_channel, stride=4, conv_module=conv_module)
-        self.enc_t = Encoder(channel, channel, n_res_block, n_res_channel, stride=2, conv_module=conv_module)
+        self.enc_b = Encoder(in_channel, channel, n_res_block,
+                             n_res_channel, stride=4, conv_module=conv_module)
+        self.enc_t = Encoder(channel, channel, n_res_block,
+                             n_res_channel, stride=2, conv_module=conv_module)
         self.quantize_conv_t = conv_module(channel, codebook_dim, 1)
         self.quantize_t = Quantize(codebook_dim, codebook_size)
         self.dec_t = Decoder(
             codebook_dim, codebook_dim, channel, n_res_block, n_res_channel, stride=2, conv_module=conv_module, conv_transpose_module=conv_transpose_module
         )
-        self.quantize_conv_b = conv_module(codebook_dim + channel, codebook_dim, 1)
+        self.quantize_conv_b = conv_module(
+            codebook_dim + channel, codebook_dim, 1)
         self.quantize_b = Quantize(codebook_dim, codebook_size)
         self.upsample_t = conv_transpose_module(
             codebook_dim, codebook_dim, 4, stride=2, padding=1
@@ -231,17 +237,21 @@ class VQVAE(nn.Module):
         enc_b = checkpoint(self.enc_b, input)
         enc_t = checkpoint(self.enc_t, enc_b)
 
-        quant_t = self.quantize_conv_t(enc_t).permute((0,2,3,1) if len(input.shape) == 4 else (0,2,1))
+        quant_t = self.quantize_conv_t(enc_t).permute(
+            (0, 2, 3, 1) if len(input.shape) == 4 else (0, 2, 1))
         quant_t, diff_t, id_t = self.quantize_t(quant_t)
-        quant_t = quant_t.permute((0,3,1,2) if len(input.shape) == 4 else (0,2,1))
+        quant_t = quant_t.permute((0, 3, 1, 2) if len(
+            input.shape) == 4 else (0, 2, 1))
         diff_t = diff_t.unsqueeze(0)
 
         dec_t = checkpoint(self.dec_t, quant_t)
         enc_b = torch.cat([dec_t, enc_b], 1)
 
-        quant_b = checkpoint(self.quantize_conv_b, enc_b).permute((0,2,3,1) if len(input.shape) == 4 else (0,2,1))
+        quant_b = checkpoint(self.quantize_conv_b, enc_b).permute(
+            (0, 2, 3, 1) if len(input.shape) == 4 else (0, 2, 1))
         quant_b, diff_b, id_b = self.quantize_b(quant_b)
-        quant_b = quant_b.permute((0,3,1,2) if len(input.shape) == 4 else (0,2,1))
+        quant_b = quant_b.permute((0, 3, 1, 2) if len(
+            input.shape) == 4 else (0, 2, 1))
         diff_b = diff_b.unsqueeze(0)
 
         return quant_t, quant_b, diff_t + diff_b, id_t, id_b
@@ -262,9 +272,11 @@ class VQVAE(nn.Module):
 
     def decode_code(self, code_t, code_b):
         quant_t = self.quantize_t.embed_code(code_t)
-        quant_t = quant_t.permute((0,3,1,2) if len(code_t.shape) == 4 else (0,2,1))
+        quant_t = quant_t.permute((0, 3, 1, 2) if len(
+            code_t.shape) == 4 else (0, 2, 1))
         quant_b = self.quantize_b.embed_code(code_b)
-        quant_b = quant_b.permute((0,3,1,2) if len(code_t.shape) == 4 else (0,2,1))
+        quant_b = quant_b.permute((0, 3, 1, 2) if len(
+            code_t.shape) == 4 else (0, 2, 1))
 
         dec = self.decode(quant_t, quant_b)
 
@@ -273,12 +285,13 @@ class VQVAE(nn.Module):
     # Performs decode_code() with the outputs from encode_only_quantized.
     def decode_code_joined(self, input):
         b, s = input.shape
-        assert s % 3 == 0  # If not, this tensor didn't come from encode_only_quantized.
+        # If not, this tensor didn't come from encode_only_quantized.
+        assert s % 3 == 0
         s = s // 3
 
         # This doesn't work with batching. TODO: fixme.
-        t = input[:,:s] - self.codebook_size
-        b = input[:,s:]
+        t = input[:, :s] - self.codebook_size
+        b = input[:, s:]
         return self.decode_code(t, b)
 
 
@@ -299,8 +312,9 @@ def register_vqvae_audio(opt_net, opt):
 
 
 if __name__ == '__main__':
-    model = VQVAE(in_channel=80, conv_module=nn.Conv1d, conv_transpose_module=nn.ConvTranspose1d)
-    #res=model(torch.randn(1,80,2048))
+    model = VQVAE(in_channel=80, conv_module=nn.Conv1d,
+                  conv_transpose_module=nn.ConvTranspose1d)
+    # res=model(torch.randn(1,80,2048))
     e = model.encode_only_quantized(torch.randn(1, 80, 2048))
     k = model.decode_code_joined(e)
     print(k.shape)

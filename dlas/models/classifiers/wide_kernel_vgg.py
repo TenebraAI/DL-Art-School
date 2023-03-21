@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 
-from trainer.networks import register_model
-from utils.util import opt_get
-import torch_intermediary as ml
+import dlas.torch_intermediary as ml
+from dlas.trainer.networks import register_model
+from dlas.utils.util import opt_get
+
 
 class WideKernelVgg(nn.Module):
     def __init__(self, nf=64, num_classes=2):
@@ -55,18 +56,19 @@ class WideKernelVgg(nn.Module):
         )
 
         # These normalization constants should be derived experimentally.
-        self.log_fft_mean = torch.tensor([-3.5184, -4.071]).view(1,1,1,2)
-        self.log_fft_std = torch.tensor([3.1660, 3.8042]).view(1,1,1,2)
+        self.log_fft_mean = torch.tensor([-3.5184, -4.071]).view(1, 1, 1, 2)
+        self.log_fft_std = torch.tensor([3.1660, 3.8042]).view(1, 1, 1, 2)
 
     def forward(self, x):
-        b,c,h,w = x.shape
+        b, c, h, w = x.shape
         x_c = x.view(c*b, h, w)
         x_c = torch.view_as_real(torch.fft.rfft(x_c))
 
         # Log-normalize spectrogram
         x_c = (x_c.abs() ** 2).clip(min=1e-8, max=1e16)
         x_c = torch.log(x_c)
-        x_c = (x_c - self.log_fft_mean.to(x.device)) / self.log_fft_std.to(x.device)
+        x_c = (x_c - self.log_fft_mean.to(x.device)) / \
+            self.log_fft_std.to(x.device)
 
         # Return to expected input shape (b,c,h,w)
         x_c = x_c.permute(0, 3, 1, 2).reshape(b, c * 2, h, w // 2 + 1)
@@ -83,4 +85,4 @@ def register_wide_kernel_vgg(opt_net, opt):
 
 if __name__ == '__main__':
     vgg = WideKernelVgg()
-    vgg(torch.randn(1,3,256,256))
+    vgg(torch.randn(1, 3, 256, 256))

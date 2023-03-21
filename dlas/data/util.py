@@ -1,21 +1,22 @@
-import os
+import glob
 import math
+import os
 import pickle
 import random
 
+import cv2
 import numpy
 import numpy as np
-import glob
 import torch
 import torchvision
-import cv2
 
 ####################
 # Files & IO
 ####################
 
 ###################### get image path list ######################
-IMG_EXTENSIONS = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP', '.webp', '.WEBP']
+IMG_EXTENSIONS = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png',
+                  '.PNG', '.ppm', '.PPM', '.bmp', '.BMP', '.webp', '.WEBP']
 
 
 def torch2cv(tensor):
@@ -30,7 +31,8 @@ def torch2cv(tensor):
 
 def cv2torch(cv, batchify=True):
     cv = cv2.cvtColor(cv, cv2.COLOR_BGR2RGB)
-    tens = torch.from_numpy(np.ascontiguousarray(np.transpose(cv, (2, 0, 1)))).float()
+    tens = torch.from_numpy(np.ascontiguousarray(
+        np.transpose(cv, (2, 0, 1)))).float()
     if batchify:
         tens = tens.unsqueeze(0)
     return tens
@@ -65,7 +67,8 @@ def _get_paths_from_images(path, qualifier=is_image_file):
 
 def _get_paths_from_lmdb(dataroot):
     """get image path list from lmdb meta info"""
-    meta_info = pickle.load(open(os.path.join(dataroot, 'meta_info.pkl'), 'rb'))
+    meta_info = pickle.load(
+        open(os.path.join(dataroot, 'meta_info.pkl'), 'rb'))
     paths = meta_info['keys']
     sizes = meta_info['resolution']
     if len(sizes) == 1:
@@ -123,7 +126,8 @@ def read_img(env, path, size=None, rgb=False):
         # Indirect open then process to support unicode files.
         stream = open(path, "rb")
         bytes = bytearray(stream.read())
-        img = cv2.imdecode(np.asarray(bytes, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+        img = cv2.imdecode(np.asarray(bytes, dtype=np.uint8),
+                           cv2.IMREAD_UNCHANGED)
     elif env == 'lmdb':
         img = _read_img_lmdb(env, path, size)
     elif env == 'buffer':
@@ -161,7 +165,8 @@ def read_img_seq(path):
     # stack to Torch tensor
     imgs = np.stack(img_l, axis=0)
     imgs = imgs[:, :, :, [2, 1, 0]]
-    imgs = torch.from_numpy(np.ascontiguousarray(np.transpose(imgs, (0, 3, 1, 2)))).float()
+    imgs = torch.from_numpy(np.ascontiguousarray(
+        np.transpose(imgs, (0, 3, 1, 2)))).float()
     return imgs
 
 
@@ -478,9 +483,12 @@ def imresize(img, scale, antialiasing=True):
     kernel_width = weights_H.size(1)
     for i in range(out_H):
         idx = int(indices_H[i][0])
-        out_1[0, i, :] = img_aug[0, idx:idx + kernel_width, :].transpose(0, 1).mv(weights_H[i])
-        out_1[1, i, :] = img_aug[1, idx:idx + kernel_width, :].transpose(0, 1).mv(weights_H[i])
-        out_1[2, i, :] = img_aug[2, idx:idx + kernel_width, :].transpose(0, 1).mv(weights_H[i])
+        out_1[0, i, :] = img_aug[0, idx:idx + kernel_width,
+                                 :].transpose(0, 1).mv(weights_H[i])
+        out_1[1, i, :] = img_aug[1, idx:idx + kernel_width,
+                                 :].transpose(0, 1).mv(weights_H[i])
+        out_1[2, i, :] = img_aug[2, idx:idx + kernel_width,
+                                 :].transpose(0, 1).mv(weights_H[i])
 
     # process W dimension
     # symmetric copying
@@ -501,9 +509,12 @@ def imresize(img, scale, antialiasing=True):
     kernel_width = weights_W.size(1)
     for i in range(out_W):
         idx = int(indices_W[i][0])
-        out_2[0, :, i] = out_1_aug[0, :, idx:idx + kernel_width].mv(weights_W[i])
-        out_2[1, :, i] = out_1_aug[1, :, idx:idx + kernel_width].mv(weights_W[i])
-        out_2[2, :, i] = out_1_aug[2, :, idx:idx + kernel_width].mv(weights_W[i])
+        out_2[0, :, i] = out_1_aug[0, :, idx:idx +
+                                   kernel_width].mv(weights_W[i])
+        out_2[1, :, i] = out_1_aug[1, :, idx:idx +
+                                   kernel_width].mv(weights_W[i])
+        out_2[2, :, i] = out_1_aug[2, :, idx:idx +
+                                   kernel_width].mv(weights_W[i])
 
     return out_2
 
@@ -548,9 +559,12 @@ def imresize_np(img, scale, antialiasing=True):
     kernel_width = weights_H.size(1)
     for i in range(out_H):
         idx = int(indices_H[i][0])
-        out_1[i, :, 0] = img_aug[idx:idx + kernel_width, :, 0].transpose(0, 1).mv(weights_H[i])
-        out_1[i, :, 1] = img_aug[idx:idx + kernel_width, :, 1].transpose(0, 1).mv(weights_H[i])
-        out_1[i, :, 2] = img_aug[idx:idx + kernel_width, :, 2].transpose(0, 1).mv(weights_H[i])
+        out_1[i, :, 0] = img_aug[idx:idx + kernel_width,
+                                 :, 0].transpose(0, 1).mv(weights_H[i])
+        out_1[i, :, 1] = img_aug[idx:idx + kernel_width,
+                                 :, 1].transpose(0, 1).mv(weights_H[i])
+        out_1[i, :, 2] = img_aug[idx:idx + kernel_width,
+                                 :, 2].transpose(0, 1).mv(weights_H[i])
 
     # process W dimension
     # symmetric copying
@@ -571,9 +585,12 @@ def imresize_np(img, scale, antialiasing=True):
     kernel_width = weights_W.size(1)
     for i in range(out_W):
         idx = int(indices_W[i][0])
-        out_2[:, i, 0] = out_1_aug[:, idx:idx + kernel_width, 0].mv(weights_W[i])
-        out_2[:, i, 1] = out_1_aug[:, idx:idx + kernel_width, 1].mv(weights_W[i])
-        out_2[:, i, 2] = out_1_aug[:, idx:idx + kernel_width, 2].mv(weights_W[i])
+        out_2[:, i, 0] = out_1_aug[:, idx:idx +
+                                   kernel_width, 0].mv(weights_W[i])
+        out_2[:, i, 1] = out_1_aug[:, idx:idx +
+                                   kernel_width, 1].mv(weights_W[i])
+        out_2[:, i, 2] = out_1_aug[:, idx:idx +
+                                   kernel_width, 2].mv(weights_W[i])
 
     return out_2.numpy()
 
@@ -587,7 +604,8 @@ def load_paths_from_cache(paths, cache_path, exclusion_list=[], endswith=[], not
         print(f"Building cache for contents of {paths}..")
         output = []
         for p in paths:
-            output.extend(find_files_of_type('img', p, qualifier=is_audio_file)[0])
+            output.extend(find_files_of_type(
+                'img', p, qualifier=is_audio_file)[0])
         if exclusion_list is not None and len(exclusion_list) > 0:
             print(f"Removing exclusion lists..")
             before = len(output)
@@ -597,6 +615,7 @@ def load_paths_from_cache(paths, cache_path, exclusion_list=[], endswith=[], not
             print(f"Excluded {before-len(output)} files.")
         if endswith is not None:
             before = len(output)
+
             def filter_fn(p):
                 for e in endswith:
                     if not p.endswith(e):
@@ -606,7 +625,8 @@ def load_paths_from_cache(paths, cache_path, exclusion_list=[], endswith=[], not
                         return False
                 return True
             output = list(filter(filter_fn, output))
-            print(f"!!Excluded {before-len(output)} files with endswith mask. For total of {len(output)} files")
+            print(
+                f"!!Excluded {before-len(output)} files with endswith mask. For total of {len(output)} files")
         print("Done.")
         torch.save(output, cache_path)
     return output
@@ -617,7 +637,8 @@ if __name__ == '__main__':
     # read images
     img = cv2.imread('test.png')
     img = img * 1.0 / 255
-    img = torch.from_numpy(np.transpose(img[:, :, [2, 1, 0]], (2, 0, 1))).float()
+    img = torch.from_numpy(np.transpose(
+        img[:, :, [2, 1, 0]], (2, 0, 1))).float()
     # imresize
     scale = 1 / 4
     import time

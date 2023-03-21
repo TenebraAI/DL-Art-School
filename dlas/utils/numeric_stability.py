@@ -1,21 +1,29 @@
-import torch
-from torch import nn
-import models.image_generation.discriminator_vgg_arch as disc
 import functools
 
-blacklisted_modules = [nn.Conv2d, nn.ReLU, nn.LeakyReLU, nn.BatchNorm2d, nn.Softmax]
+import torch
+from torch import nn
+
+import dlas.models.image_generation.discriminator_vgg_arch as disc
+
+blacklisted_modules = [nn.Conv2d, nn.ReLU,
+                       nn.LeakyReLU, nn.BatchNorm2d, nn.Softmax]
+
+
 def install_forward_trace_hooks(module, id="base"):
     if type(module) in blacklisted_modules:
         return
-    module.register_forward_hook(functools.partial(inject_input_shapes, mod_id=id))
+    module.register_forward_hook(
+        functools.partial(inject_input_shapes, mod_id=id))
     for name, m in module.named_children():
         cid = "%s:%s" % (id, name)
         install_forward_trace_hooks(m, cid)
+
 
 def inject_input_shapes(module: nn.Module, inputs, outputs, mod_id: str):
     if len(inputs) == 1 and isinstance(inputs[0], torch.Tensor):
         # Only single tensor inputs currently supported. TODO: fix.
         module._input_shape = inputs[0].shape
+
 
 def extract_input_shapes(module, id="base"):
     shapes = {}
@@ -25,6 +33,7 @@ def extract_input_shapes(module, id="base"):
         cid = "%s:%s" % (id, n)
         shapes.update(extract_input_shapes(m, cid))
     return shapes
+
 
 def test_stability(mod_fn, dummy_inputs, device='cuda'):
     base_module = mod_fn().to(device)
@@ -49,6 +58,7 @@ def test_stability(mod_fn, dummy_inputs, device='cuda'):
         print("%s - mean: %f std: %f" % (k, torch.mean(torch.stack(means[k])),
                                          torch.mean(torch.stack(stds[k]))))
 
+
 def test_stability_per_module(mod: nn.Module, input_shapes: dict, device='cuda', id="base"):
     means = {}
     stds = {}
@@ -59,10 +69,12 @@ def test_stability_per_module(mod: nn.Module, input_shapes: dict, device='cuda',
         stds[id] = std
     for name, child in mod.named_children():
         cid = "%s:%s" % (id, name)
-        m, s = test_stability_per_module(child, input_shapes, device=device, id=cid)
+        m, s = test_stability_per_module(
+            child, input_shapes, device=device, id=cid)
         means.update(m)
         stds.update(s)
     return means, stds
+
 
 def test_numeric_stability(mod: nn.Module, format, iterations=50, device='cuda'):
     x = torch.randn(format).to(device)
@@ -126,5 +138,5 @@ if __name__ == "__main__":
                    device='cuda')
     '''
     test_stability(functools.partial(disc.Discriminator_UNet_FeaOut, 3, 64),
-                   torch.randn(1,3,128,128),
+                   torch.randn(1, 3, 128, 128),
                    device='cpu')

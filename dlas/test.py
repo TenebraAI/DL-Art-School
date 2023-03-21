@@ -1,23 +1,25 @@
-import os.path as osp
+import argparse
 import logging
+import os.path as osp
 import random
 import time
-import argparse
 from collections import OrderedDict
 
-import utils
-import utils.options as option
-import utils.util as util
-from trainer.ExtensibleTrainer import ExtensibleTrainer
-from data import create_dataset, create_dataloader
-from tqdm import tqdm
-import torch
 import numpy as np
+import torch
+from tqdm import tqdm
+
+import dlas.utils
+import dlas.utils.options as option
+import dlas.utils.util as util
+from dlas.data import create_dataloader, create_dataset
+from dlas.trainer.ExtensibleTrainer import ExtensibleTrainer
 
 
 def forward_pass(model, data, output_dir, opt):
     alteration_suffix = util.opt_get(opt, ['name'], '')
-    denorm_range = tuple(util.opt_get(opt, ['image_normalization_range'], [0, 1]))
+    denorm_range = tuple(util.opt_get(
+        opt, ['image_normalization_range'], [0, 1]))
     with torch.no_grad():
         model.feed_data(data, 0, need_GT=need_GT)
         model.test()
@@ -54,11 +56,12 @@ if __name__ == "__main__":
     random.seed(5555)
     np.random.seed(5555)
 
-    #### options
+    # options
     torch.backends.cudnn.benchmark = True
     want_metrics = False
     parser = argparse.ArgumentParser()
-    parser.add_argument('-opt', type=str, help='Path to options YAML file.', default='../options/test_diffusion_unet.yml')
+    parser.add_argument('-opt', type=str, help='Path to options YAML file.',
+                        default='../options/test_diffusion_unet.yml')
     opt = option.parse(parser.parse_args().opt, is_train=False)
     opt = option.dict_to_nonedict(opt)
     utils.util.loaded_options = opt
@@ -71,12 +74,13 @@ if __name__ == "__main__":
     logger = logging.getLogger('base')
     logger.info(option.dict2str(opt))
 
-    #### Create test dataset and dataloader
+    # Create test dataset and dataloader
     test_loaders = []
     for phase, dataset_opt in sorted(opt['datasets'].items()):
         test_set = create_dataset(dataset_opt)
         test_loader = create_dataloader(test_set, dataset_opt)
-        logger.info('Number of test images in [{:s}]: {:d}'.format(dataset_opt['name'], len(test_set)))
+        logger.info('Number of test images in [{:s}]: {:d}'.format(
+            dataset_opt['name'], len(test_set)))
         test_loaders.append(test_loader)
 
     model = ExtensibleTrainer(opt)
@@ -105,4 +109,5 @@ if __name__ == "__main__":
             psnr_loss += psnr_loss
 
         # log
-        logger.info('# Validation # Fea: {:.4e}, PSNR: {:.4e}'.format(fea_loss / len(test_loader), psnr_loss / len(test_loader)))
+        logger.info('# Validation # Fea: {:.4e}, PSNR: {:.4e}'.format(
+            fea_loss / len(test_loader), psnr_loss / len(test_loader)))

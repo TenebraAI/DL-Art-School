@@ -8,14 +8,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
 import torchvision
-import torch_intermediary as ml
 
-from models.diffusion.nn import timestep_embedding, normalization, zero_module, conv_nd, linear
-from models.diffusion.unet_diffusion import TimestepBlock
-from models.lucidrains.x_transformers import Encoder, Attention, RMSScaleShiftNorm, RotaryEmbedding, \
-    FeedForward
-from trainer.networks import register_model
-from utils.util import checkpoint, print_network, load_audio
+import dlas.torch_intermediary as ml
+from dlas.models.diffusion.nn import (conv_nd, linear, normalization,
+                                      timestep_embedding, zero_module)
+from dlas.models.diffusion.unet_diffusion import TimestepBlock
+from dlas.models.lucidrains.x_transformers import (Attention, Encoder,
+                                                   FeedForward,
+                                                   RMSScaleShiftNorm,
+                                                   RotaryEmbedding)
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint, load_audio, print_network
 
 
 class TimestepRotaryEmbedSequential(nn.Sequential, TimestepBlock):
@@ -389,17 +392,20 @@ def inference_tfdpc5_with_cheater():
                                                               use_fp16=False, unconditioned_percentage=0).eval().cuda()
             model.load_state_dict(torch.load('x:/dlas/experiments/train_music_cheater_gen_v3/models/59000_generator_ema.pth'))
 
-            from trainer.injectors.audio_injectors import TorchMelSpectrogramInjector
+            from trainer.injectors.audio_injectors import \
+                TorchMelSpectrogramInjector
             spec_fn = TorchMelSpectrogramInjector({'n_mel_channels': 256, 'mel_fmax': 11000, 'filter_length': 16000, 'true_normalization': True,
                                                         'normalize': True, 'in': 'in', 'out': 'out'}, {}).cuda()
             ref_mel = spec_fn({'in': sample.unsqueeze(0)})['out']
-            from trainer.injectors.audio_injectors import MusicCheaterLatentInjector
+            from trainer.injectors.audio_injectors import \
+                MusicCheaterLatentInjector
             cheater_encoder = MusicCheaterLatentInjector({'in': 'in', 'out': 'out'}, {}).cuda()
             ref_cheater = cheater_encoder({'in': ref_mel})['out']
 
-            from models.diffusion.respace import SpacedDiffusion
-            from models.diffusion.respace import space_timesteps
-            from models.diffusion.gaussian_diffusion import get_named_beta_schedule
+            from models.diffusion.gaussian_diffusion import \
+                get_named_beta_schedule
+            from models.diffusion.respace import (SpacedDiffusion,
+                                                  space_timesteps)
             diffuser = SpacedDiffusion(use_timesteps=space_timesteps(4000, [128]), model_mean_type='epsilon',
                                    model_var_type='learned_range', loss_type='mse', betas=get_named_beta_schedule('linear', 4000),
                                    conditioning_free=True, conditioning_free_k=1)
@@ -415,7 +421,8 @@ def inference_tfdpc5_with_cheater():
             # Just decode the ref.
             #gen_cheater = ref_cheater
 
-            from models.audio.music.transformer_diffusion12 import TransformerDiffusionWithCheaterLatent
+            from models.audio.music.transformer_diffusion12 import \
+                TransformerDiffusionWithCheaterLatent
             diffuser = SpacedDiffusion(use_timesteps=space_timesteps(4000, [32]), model_mean_type='epsilon',
                                    model_var_type='learned_range', loss_type='mse', betas=get_named_beta_schedule('linear', 4000),
                                    conditioning_free=True, conditioning_free_k=1)

@@ -1,20 +1,18 @@
-import os.path as osp
-import logging
-import time
 import argparse
-
+import logging
 import os
+import os.path as osp
+import time
 
-from torchvision.transforms import CenterCrop
-
-from trainer.ExtensibleTrainer import ExtensibleTrainer
-from utils import options as option
-import utils.util as util
-from data import create_dataset, create_dataloader
-from tqdm import tqdm
 import torch
 import torchvision
+from torchvision.transforms import CenterCrop
+from tqdm import tqdm
 
+import dlas.utils.util as util
+from dlas.data import create_dataloader, create_dataset
+from dlas.trainer.ExtensibleTrainer import ExtensibleTrainer
+from dlas.utils import options as option
 
 if __name__ == "__main__":
     bin_path = "f:\\tmp\\binned"
@@ -22,10 +20,10 @@ if __name__ == "__main__":
     os.makedirs(bin_path, exist_ok=True)
     os.makedirs(good_path, exist_ok=True)
 
-
     torch.backends.cudnn.benchmark = True
     parser = argparse.ArgumentParser()
-    parser.add_argument('-opt', type=str, help='Path to options YAML file.', default='../options/train_quality_detectors/train_resnet_jpeg.yml')
+    parser.add_argument('-opt', type=str, help='Path to options YAML file.',
+                        default='../options/train_quality_detectors/train_resnet_jpeg.yml')
     opt = option.parse(parser.parse_args().opt, is_train=False)
     opt = option.dict_to_nonedict(opt)
     opt['dist'] = False
@@ -38,12 +36,13 @@ if __name__ == "__main__":
     logger = logging.getLogger('base')
     logger.info(option.dict2str(opt))
 
-    #### Create test dataset and dataloader
+    # Create test dataset and dataloader
     test_loaders = []
     for phase, dataset_opt in sorted(opt['datasets'].items()):
         test_set = create_dataset(dataset_opt)
         test_loader = create_dataloader(test_set, dataset_opt, opt=opt)
-        logger.info('Number of test images in [{:s}]: {:d}'.format(dataset_opt['name'], len(test_set)))
+        logger.info('Number of test images in [{:s}]: {:d}'.format(
+            dataset_opt['name'], len(test_set)))
         test_loaders.append(test_loader)
 
     model = ExtensibleTrainer(opt)
@@ -61,12 +60,13 @@ if __name__ == "__main__":
         for k, data in enumerate(tq):
             model.feed_data(data, k)
             model.test()
-            results = torch.argmax(torch.nn.functional.softmax(model.eval_state['logits'][0], dim=-1), dim=1)
+            results = torch.argmax(torch.nn.functional.softmax(
+                model.eval_state['logits'][0], dim=-1), dim=1)
             for i in range(results.shape[0]):
                 if results[i] == 0:
                     imname = osp.basename(data['HQ_path'][i])
                     # For VERIFICATION:
-                    #torchvision.utils.save_image(data['hq'][i], osp.join(bin_path, imname))
+                    # torchvision.utils.save_image(data['hq'][i], osp.join(bin_path, imname))
                     # 4 REALZ:
                     os.remove(data['HQ_path'][i])
                     removed += 1

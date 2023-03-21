@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 
-from models.arch_util import ConvGnLelu
-from models.image_generation.stylegan.stylegan2_rosinality import Generator
+from dlas.models.arch_util import ConvGnLelu
+from dlas.models.image_generation.stylegan.stylegan2_rosinality import \
+    Generator
 
 
 class Stylegan2LatentBank(nn.Module):
@@ -10,7 +11,9 @@ class Stylegan2LatentBank(nn.Module):
         super().__init__()
 
         # Initialize the bank.
-        self.bank = Generator(size=max_dim, style_dim=latent_dim, n_mlp=8, channel_multiplier=2)  # Assumed using 'f' generators with mult=2.
+        # Assumed using 'f' generators with mult=2.
+        self.bank = Generator(
+            size=max_dim, style_dim=latent_dim, n_mlp=8, channel_multiplier=2)
         state_dict = torch.load(pretrained_model_file)
         self.bank.load_state_dict(state_dict, strict=True)
 
@@ -23,8 +26,10 @@ class Stylegan2LatentBank(nn.Module):
         stylegan_encoder_dims = [512, 512, 512, 512, 512, 256, 128, 64, 32]
 
         # Initialize the fusion blocks. TODO: Try using the StyledConvs instead of regular ones.
-        encoder_output_dims = reversed([min(encoder_nf * 2 ** i, encoder_max_nf) for i in range(encoder_levels)])
-        input_dims_by_layer = [eod + sed for eod, sed in zip(encoder_output_dims, stylegan_encoder_dims)]
+        encoder_output_dims = reversed(
+            [min(encoder_nf * 2 ** i, encoder_max_nf) for i in range(encoder_levels)])
+        input_dims_by_layer = [
+            eod + sed for eod, sed in zip(encoder_output_dims, stylegan_encoder_dims)]
         self.fusion_blocks = nn.ModuleList([ConvGnLelu(in_filters, out_filters, kernel_size=3, activation=True, norm=False, bias=True)
                                             for in_filters, out_filters in zip(input_dims_by_layer, stylegan_encoder_dims)])
 
@@ -42,7 +47,8 @@ class Stylegan2LatentBank(nn.Module):
     # - Later layers -> GLEAN terminates at 256 resolution.
     def forward(self, convolutional_features, latent_vectors):
 
-        out = self.bank.input(latent_vectors[:, 0])  # The input here is only used to fetch the batch size.
+        # The input here is only used to fetch the batch size.
+        out = self.bank.input(latent_vectors[:, 0])
         out = self.bank.conv1(out, latent_vectors[:, 0], noise=None)
 
         k = 0

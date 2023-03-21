@@ -3,15 +3,15 @@ import logging
 import os
 import pkgutil
 import sys
-from collections import OrderedDict
-from inspect import isfunction, getmembers, signature
+from inspect import getmembers, isfunction, signature
 
 logger = logging.getLogger('base')
 
 
 class RegisteredModelNameError(Exception):
     def __init__(self, name_error):
-        super().__init__(f'Registered DLAS modules must start with `register_`. Incorrect registration: {name_error}')
+        super().__init__(
+            f'Registered DLAS modules must start with `register_`. Incorrect registration: {name_error}')
 
 
 # Decorator that allows API clients to show DLAS how to build a nn.Module from an opt dict.
@@ -36,18 +36,22 @@ def register_model(func):
 # I can't be assed to deal with that headache at the moment, I just want something to work right now without needing to touch a shell
 
 # inject.py has a similar loader scheme, be sure to mirror it if you touch this too
+
+
 def find_registered_model_fns(base_path='models'):
     found_fns = {}
-    path = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), f'../{base_path}'))
+    path = os.path.normpath(os.path.join(os.path.dirname(
+        os.path.realpath(__file__)), f'../{base_path}'))
 
     module_iter = pkgutil.walk_packages([path])
     for mod in module_iter:
         if mod.ispkg:
             EXCLUSION_LIST = ['flownet2']
             if mod.name not in EXCLUSION_LIST:
-                found_fns.update(find_registered_model_fns(f'{base_path}/{mod.name}'))
+                found_fns.update(find_registered_model_fns(
+                    f'{base_path}/{mod.name}'))
         else:
-            mod_name = f'{base_path}/{mod.name}'.replace('/', '.')
+            mod_name = f'dlas/{base_path}/{mod.name}'.replace('/', '.')
             importlib.import_module(mod_name)
             for mod_fn in getmembers(sys.modules[mod_name], isfunction):
                 if hasattr(mod_fn[1], "_dlas_registered_model"):

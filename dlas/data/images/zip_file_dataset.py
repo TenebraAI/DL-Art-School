@@ -1,9 +1,10 @@
-import PIL.Image
 import zipfile
+
+import PIL.Image
 import torch
 import torchvision
 from torch.utils.data import DataLoader
-from torchvision.transforms import Compose, ToTensor, Normalize, Resize
+from torchvision.transforms import Compose, Normalize, Resize, ToTensor
 
 
 class ZipFileDataset(torch.utils.data.Dataset):
@@ -14,9 +15,10 @@ class ZipFileDataset(torch.utils.data.Dataset):
         self.resolution = opt['resolution']
         self.paired_mode = opt['paired_mode']
         self.transforms = Compose([ToTensor(),
-                                 Resize(self.resolution),
-                                 Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-                                  ])
+                                   Resize(self.resolution),
+                                   Normalize((0.485, 0.456, 0.406),
+                                             (0.229, 0.224, 0.225))
+                                   ])
         self.zip = None
 
     def __len__(self):
@@ -49,9 +51,11 @@ class ZipFileDataset(torch.utils.data.Dataset):
                     aname = fname.replace('1.jpg', '0.jpg')
                 out['alt_hq'] = self.load_image(aname)
         except:
-            print(f"Error loading {fname} from zipfile. Attempting to recover by loading next element.")
+            print(
+                f"Error loading {fname} from zipfile. Attempting to recover by loading next element.")
             return self[i+1]
         return out
+
 
 if __name__ == '__main__':
     opt = {
@@ -65,4 +69,3 @@ if __name__ == '__main__':
     for i, d in enumerate(loader):
         torchvision.utils.save_image(d['hq'], f'{i}_hq.png')
         torchvision.utils.save_image(d['alt_hq'], f'{i}_althq.png')
-

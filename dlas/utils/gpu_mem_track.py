@@ -1,9 +1,9 @@
-import gc
 import datetime
-import pynvml
+import gc
 
-import torch
 import numpy as np
+import pynvml
+import torch
 
 
 class MemTracker(object):
@@ -16,11 +16,13 @@ class MemTracker(object):
         verbose(bool, default False): whether show the trivial exception
         device(int): GPU number, default is 0
     """
+
     def __init__(self, frame, detail=True, path='', verbose=False, device=0):
         self.frame = frame
         self.print_detail = detail
         self.last_tensor_sizes = set()
-        self.gpu_profile_fn = path + f'{datetime.datetime.now():%d-%b-%y-%H.%M.%S}-gpu_mem_track.txt'
+        self.gpu_profile_fn = path + \
+            f'{datetime.datetime.now():%d-%b-%y-%H.%M.%S}-gpu_mem_track.txt'
         self.verbose = verbose
         self.begin = True
         self.device = device
@@ -54,7 +56,8 @@ class MemTracker(object):
         handle = pynvml.nvmlDeviceGetHandleByIndex(self.device)
         meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
         self.curr_line = self.frame.f_lineno
-        where_str = self.module_name + ' ' + self.func_name + ':' + ' line ' + str(self.curr_line)
+        where_str = self.module_name + ' ' + self.func_name + \
+            ':' + ' line ' + str(self.curr_line)
 
         with open(self.gpu_profile_fn, 'a+') as f:
 
@@ -68,9 +71,11 @@ class MemTracker(object):
                 new_tensor_sizes = {(type(x), tuple(x.size()), ts_list.count(x.size()), np.prod(np.array(x.size()))*4/1000**2)
                                     for x in self.get_tensors()}
                 for t, s, n, m in new_tensor_sizes - self.last_tensor_sizes:
-                    f.write(f'+ | {str(n)} * Size:{str(s):<20} | Memory: {str(m*n)[:6]} M | {str(t):<20}\n')
+                    f.write(
+                        f'+ | {str(n)} * Size:{str(s):<20} | Memory: {str(m*n)[:6]} M | {str(t):<20}\n')
                 for t, s, n, m in self.last_tensor_sizes - new_tensor_sizes:
-                    f.write(f'- | {str(n)} * Size:{str(s):<20} | Memory: {str(m*n)[:6]} M | {str(t):<20} \n')
+                    f.write(
+                        f'- | {str(n)} * Size:{str(s):<20} | Memory: {str(m*n)[:6]} M | {str(t):<20} \n')
                 self.last_tensor_sizes = new_tensor_sizes
 
             f.write(f"\nAt {where_str:<50}"

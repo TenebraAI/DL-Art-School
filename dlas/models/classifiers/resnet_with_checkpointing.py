@@ -1,18 +1,17 @@
 # A direct copy of torchvision's resnet.py modified to support gradient checkpointing.
 
 import torch
-import torch.nn as nn
-from torchvision.models.resnet import BasicBlock, Bottleneck
 import torchvision
-import torch_intermediary as ml
+from torchvision.models.resnet import BasicBlock, Bottleneck
 
+import dlas.torch_intermediary as ml
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152', 'resnext50_32x4d', 'resnext101_32x8d',
            'wide_resnet50_2', 'wide_resnet101_2']
 
-from trainer.networks import register_model
-from utils.util import checkpoint
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint
 
 model_urls = {
     'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',

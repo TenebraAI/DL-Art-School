@@ -1,25 +1,26 @@
+import argparse
+import logging
 import os
 import os.path as osp
-import logging
 import random
 import time
-import argparse
 from collections import OrderedDict
 
 import numpy
+import numpy as np
+import torch
 from PIL import Image
 from torchvision.transforms import ToTensor
-
-import utils
-import utils.options as option
-import utils.util as util
-from trainer.ExtensibleTrainer import ExtensibleTrainer
-from data import create_dataset, create_dataloader
 from tqdm import tqdm
-import torch
-import numpy as np
+
+import dlas.utils
+import dlas.utils.options as option
+import dlas.utils.util as util
+from dlas.data import create_dataloader, create_dataset
+from dlas.trainer.ExtensibleTrainer import ExtensibleTrainer
 
 # A rough copy of test.py that repeatedly performs SR, then downsamples the result and does it again.
+
 
 def forward_pass(model, data, output_dir, it):
     with torch.no_grad():
@@ -45,11 +46,12 @@ if __name__ == "__main__":
     random.seed(5555)
     np.random.seed(5555)
 
-    #### options
+    # options
     torch.backends.cudnn.benchmark = True
     want_metrics = False
     parser = argparse.ArgumentParser()
-    parser.add_argument('-opt', type=str, help='Path to options YAML file.', default='../options/test_diffusion_unet.yml')
+    parser.add_argument('-opt', type=str, help='Path to options YAML file.',
+                        default='../options/test_diffusion_unet.yml')
     opt = option.parse(parser.parse_args().opt, is_train=False)
     opt = option.dict_to_nonedict(opt)
     utils.util.loaded_options = opt
@@ -66,20 +68,21 @@ if __name__ == "__main__":
     im = ToTensor()(Image.open(opt['image'])) * 2 - 1
     _, h, w = im.shape
     if h % 2 == 1:
-        im = im[:,1:,:]
+        im = im[:, 1:, :]
         h = h-1
     if w % 2 == 1:
-        im = im[:,:,1:]
+        im = im[:, :, 1:]
         w = w-1
     dh, dw = (h - 32 * (h // 32)) // 2, (w - 32 * (w // 32)) // 2
     if dh > 0:
-        im = im[:,dh:-dh]
+        im = im[:, dh:-dh]
     if dw > 0:
-        im = im[:,:,dw:-dw]
+        im = im[:, :, dw:-dw]
     im = im[:3].unsqueeze(0)
 
     model = ExtensibleTrainer(opt)
-    results_dir = osp.join(opt['path']['results_root'], os.path.basename(opt['image']))
+    results_dir = osp.join(opt['path']['results_root'],
+                           os.path.basename(opt['image']))
     util.mkdir(results_dir)
     for i in range(100):
         data = {
@@ -89,5 +92,6 @@ if __name__ == "__main__":
                                                dtype=torch.float),
             'GT_path': opt['image']
         }
-        im = torch.nn.functional.interpolate(forward_pass(model, data, results_dir, i), scale_factor=.5, mode="area")
+        im = torch.nn.functional.interpolate(forward_pass(
+            model, data, results_dir, i), scale_factor=.5, mode="area")
         im = im * 2 - 1

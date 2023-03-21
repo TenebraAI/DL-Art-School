@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 from omegaconf import OmegaConf
 
-from models.audio.vocoders.univnet.lvcnet import LVCBlock
-from trainer.networks import register_model
+from dlas.models.audio.vocoders.univnet.lvcnet import LVCBlock
+from dlas.trainer.networks import register_model
 
 MAX_WAV_VALUE = 32768.0
 
@@ -11,7 +11,7 @@ MAX_WAV_VALUE = 32768.0
 class UnivNetGenerator(nn.Module):
     """UnivNet Generator"""
 
-    def __init__(self, noise_dim=64, channel_size=32, dilations=[1,3,9,27], strides=[8,8,4], lReLU_slope=.2, kpnet_conv_size=3,
+    def __init__(self, noise_dim=64, channel_size=32, dilations=[1, 3, 9, 27], strides=[8, 8, 4], lReLU_slope=.2, kpnet_conv_size=3,
                  # Below are MEL configurations options that this generator requires.
                  hop_length=256, n_mel_channels=100):
         super(UnivNetGenerator, self).__init__()
@@ -38,11 +38,13 @@ class UnivNetGenerator(nn.Module):
             )
 
         self.conv_pre = \
-            nn.utils.weight_norm(nn.Conv1d(noise_dim, channel_size, 7, padding=3, padding_mode='reflect'))
+            nn.utils.weight_norm(
+                nn.Conv1d(noise_dim, channel_size, 7, padding=3, padding_mode='reflect'))
 
         self.conv_post = nn.Sequential(
             nn.LeakyReLU(lReLU_slope),
-            nn.utils.weight_norm(nn.Conv1d(channel_size, 1, 7, padding=3, padding_mode='reflect')),
+            nn.utils.weight_norm(
+                nn.Conv1d(channel_size, 1, 7, padding=3, padding_mode='reflect')),
             nn.Tanh(),
         )
 
@@ -84,11 +86,13 @@ class UnivNetGenerator(nn.Module):
     def inference(self, c, z=None):
         # pad input mel with zeros to cut artifact
         # see https://github.com/seungwonpark/melgan/issues/8
-        zero = torch.full((c.shape[0], self.mel_channel, 10), -11.5129).to(c.device)
+        zero = torch.full(
+            (c.shape[0], self.mel_channel, 10), -11.5129).to(c.device)
         mel = torch.cat((c, zero), dim=2)
 
         if z is None:
-            z = torch.randn(c.shape[0], self.noise_dim, mel.size(2)).to(mel.device)
+            z = torch.randn(c.shape[0], self.noise_dim,
+                            mel.size(2)).to(mel.device)
 
         audio = self.forward(mel, z)
         audio = audio[:, :, :-(self.hop_length * 10)]
@@ -112,5 +116,6 @@ if __name__ == '__main__':
     print(y.shape)
     assert y.shape == torch.Size([3, 1, 2560])
 
-    pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    pytorch_total_params = sum(p.numel()
+                               for p in model.parameters() if p.requires_grad)
     print(pytorch_total_params)

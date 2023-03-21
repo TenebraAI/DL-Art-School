@@ -1,12 +1,11 @@
-from typing import Optional, List
+from typing import List, Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 from torch.nn.modules.conv import _ConvNd, _ConvTransposeNd
 from torch.nn.modules.utils import _ntuple
-import torch.nn.functional as F
-
 
 _pair = _ntuple(2)
 
@@ -14,7 +13,7 @@ _pair = _ntuple(2)
 # Indexes the <p> index of input=b,c,h,w,p by the long tensor index=b,1,h,w. Result is b,c,h,w.
 # Frankly - IMO - this is what torch.gather should do.
 def index_2d(input, index):
-    index = index.repeat(1,input.shape[1],1,1)
+    index = index.repeat(1, input.shape[1], 1, 1)
     e = torch.eye(input.shape[-1], device=input.device)
     result = e[index] * input
     return result.sum(-1)
@@ -27,9 +26,9 @@ class ScaledWeightConv(_ConvNd):
         in_channels: int,
         out_channels: int,
         kernel_size,
-        stride = 1,
-        padding = 0,
-        dilation = 1,
+        stride=1,
+        padding=0,
+        dilation=1,
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = 'zeros',
@@ -39,11 +38,14 @@ class ScaledWeightConv(_ConvNd):
         padding = _pair(padding)
         dilation = _pair(dilation)
         super().__init__(
-            in_channels, out_channels, _pair(kernel_size), stride, padding, dilation,
+            in_channels, out_channels, _pair(
+                kernel_size), stride, padding, dilation,
             False, _pair(0), groups, bias, padding_mode)
 
-        self.weight_scales = nn.ParameterList([nn.Parameter(torch.ones(out_channels, in_channels, kernel_size, kernel_size)) for _ in range(breadth)])
-        self.shifts = nn.ParameterList([nn.Parameter(torch.zeros(out_channels, in_channels, kernel_size, kernel_size)) for _ in range(breadth)])
+        self.weight_scales = nn.ParameterList([nn.Parameter(torch.ones(
+            out_channels, in_channels, kernel_size, kernel_size)) for _ in range(breadth)])
+        self.shifts = nn.ParameterList([nn.Parameter(torch.zeros(
+            out_channels, in_channels, kernel_size, kernel_size)) for _ in range(breadth)])
         for w, s in zip(self.weight_scales, self.shifts):
             w.FOR_SCALE_SHIFT = True
             s.FOR_SCALE_SHIFT = True
@@ -67,7 +69,8 @@ class ScaledWeightConv(_ConvNd):
 
         # This is an exceptionally inefficient way of achieving this functionality. The hope is that if this is any
         # good at all, this can be made more efficient by performing a single conv pass with multiple masks.
-        weighted_convs = [self._weighted_conv_forward(input, self.weight * scale + shift) for scale, shift in zip(self.weight_scales, self.shifts)]
+        weighted_convs = [self._weighted_conv_forward(
+            input, self.weight * scale + shift) for scale, shift in zip(self.weight_scales, self.shifts)]
         weighted_convs = torch.stack(weighted_convs, dim=-1)
 
         needed_mask = weighted_convs.shape[-2]
@@ -97,9 +100,9 @@ class ScaledWeightConvTranspose(_ConvTransposeNd):
         in_channels: int,
         out_channels: int,
         kernel_size,
-        stride = 1,
-        padding = 0,
-        output_padding = 0,
+        stride=1,
+        padding=0,
+        output_padding=0,
         groups: int = 1,
         bias: bool = True,
         dilation: int = 1,
@@ -111,11 +114,14 @@ class ScaledWeightConvTranspose(_ConvTransposeNd):
         dilation = _pair(dilation)
         output_padding = _pair(output_padding)
         super().__init__(
-            in_channels, out_channels, _pair(kernel_size), stride, padding, dilation,
+            in_channels, out_channels, _pair(
+                kernel_size), stride, padding, dilation,
             True, output_padding, groups, bias, padding_mode)
 
-        self.weight_scales = nn.ParameterList([nn.Parameter(torch.ones(in_channels, out_channels, kernel_size, kernel_size)) for _ in range(breadth)])
-        self.shifts = nn.ParameterList([nn.Parameter(torch.zeros(in_channels, out_channels, kernel_size, kernel_size)) for _ in range(breadth)])
+        self.weight_scales = nn.ParameterList([nn.Parameter(torch.ones(
+            in_channels, out_channels, kernel_size, kernel_size)) for _ in range(breadth)])
+        self.shifts = nn.ParameterList([nn.Parameter(torch.zeros(
+            in_channels, out_channels, kernel_size, kernel_size)) for _ in range(breadth)])
         for w, s in zip(self.weight_scales, self.shifts):
             w.FOR_SCALE_SHIFT = True
             s.FOR_SCALE_SHIFT = True
@@ -125,7 +131,8 @@ class ScaledWeightConvTranspose(_ConvTransposeNd):
 
     def _conv_transpose_forward(self, input, weight, output_size) -> Tensor:
         if self.padding_mode != 'zeros':
-            raise ValueError('Only `zeros` padding mode is supported for ConvTranspose2d')
+            raise ValueError(
+                'Only `zeros` padding mode is supported for ConvTranspose2d')
 
         output_padding = self._output_padding(
             input, output_size, self.stride, self.padding, self.kernel_size, self.dilation)
@@ -154,16 +161,16 @@ class ScaledWeightConvTranspose(_ConvTransposeNd):
 
 def create_wrapped_conv_transpose_from_template(conv: nn.Conv2d, breadth: int):
     wrapped = ScaledWeightConvTranspose(conv.in_channels,
-                               conv.out_channels,
-                               conv.kernel_size,
-                               conv.stride,
-                               conv.padding,
-                               conv.output_padding,
-                               conv.groups,
-                               conv.bias,
-                               conv.dilation,
-                               conv.padding_mode,
-                               breadth)
+                                        conv.out_channels,
+                                        conv.kernel_size,
+                                        conv.stride,
+                                        conv.padding,
+                                        conv.output_padding,
+                                        conv.groups,
+                                        conv.bias,
+                                        conv.dilation,
+                                        conv.padding_mode,
+                                        breadth)
     wrapped.weight = conv.weight
     wrapped.weight.DO_NOT_TRAIN = True
     wrapped.weight.requires_grad = False

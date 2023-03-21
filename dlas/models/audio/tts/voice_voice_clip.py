@@ -1,14 +1,15 @@
 import random
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import einsum
 
-from models.audio.tts.mini_encoder import AudioMiniEncoder
-from trainer.injectors.spec_augment import spec_augment
-from trainer.networks import register_model
-from utils.util import opt_get
-import torch_intermediary as ml
+import dlas.torch_intermediary as ml
+from dlas.models.audio.tts.mini_encoder import AudioMiniEncoder
+from dlas.trainer.injectors.spec_augment import spec_augment
+from dlas.trainer.networks import register_model
+from dlas.utils.util import opt_get
 
 
 def exists(val):
@@ -17,7 +18,7 @@ def exists(val):
 
 def masked_mean(t, mask, dim=1):
     t = t.masked_fill(~mask[:, :, None], 0.)
-    return t.sum(dim = 1) / mask.sum(dim = 1)[..., None]
+    return t.sum(dim=1) / mask.sum(dim=1)[..., None]
 
 
 class VoiceCLIP(nn.Module):
@@ -36,7 +37,8 @@ class VoiceCLIP(nn.Module):
         super().__init__()
         self.encoder = AudioMiniEncoder(80, encoder_output)
         if pretrained_encoder_dict_path is not None:
-            self.encoder.load_state_dict(torch.load(pretrained_encoder_dict_path))
+            self.encoder.load_state_dict(
+                torch.load(pretrained_encoder_dict_path))
         self.to_latent = ml.Linear(encoder_output, dim_latent, bias=False)
         self.temperature = nn.Parameter(torch.tensor(1.))
         self.mel_compression_ratio = mel_compression_ratio
@@ -47,7 +49,8 @@ class VoiceCLIP(nn.Module):
         speech_lengths,
         return_loss=True
     ):
-        half_length = min(speech_mels.shape[-1], torch.min(speech_lengths).item() // self.mel_compression_ratio) // 2
+        half_length = min(
+            speech_mels.shape[-1], torch.min(speech_lengths).item() // self.mel_compression_ratio) // 2
 
         # Extract two speech MELs from the same clip, apply some random noise to them and also apply specaugment to them.
         first_half = speech_mels[:, :, :half_length]
@@ -81,7 +84,8 @@ class VoiceCLIP(nn.Module):
         second_emb = self.encoder(second_half)
         second_latents = self.to_latent(second_emb)
 
-        first_latents, second_latents = map(lambda t: F.normalize(t, p=2, dim=-1), (first_latents, second_latents))
+        first_latents, second_latents = map(lambda t: F.normalize(
+            t, p=2, dim=-1), (first_latents, second_latents))
 
         temp = self.temperature.exp()
 
@@ -90,8 +94,10 @@ class VoiceCLIP(nn.Module):
             return sim
 
         sim = einsum('i d, j d -> i j', first_latents, second_latents) * temp
-        labels = torch.arange(first_latents.shape[0], device=first_latents.device)
-        loss = (F.cross_entropy(sim, labels) + F.cross_entropy(sim.t(), labels)) / 2
+        labels = torch.arange(
+            first_latents.shape[0], device=first_latents.device)
+        loss = (F.cross_entropy(sim, labels) +
+                F.cross_entropy(sim.t(), labels)) / 2
         return loss
 
     def inference(self, speech_mels):
@@ -111,6 +117,6 @@ def register_voice_to_voice_clip(opt_net, opt):
 if __name__ == '__main__':
     clip = VoiceCLIP()
     for k in range(1000):
-        clip(torch.randn((2,80,156)),
-             torch.randint(130*1024,156*1024,(2,)),
+        clip(torch.randn((2, 80, 156)),
+             torch.randint(130*1024, 156*1024, (2,)),
              return_loss=True)

@@ -9,14 +9,15 @@ import torchaudio
 import torchvision
 from tqdm import tqdm
 
-from utils.util import opt_get
+from dlas.utils.util import opt_get
 
 
 class PreprocessedMelDataset(torch.utils.data.Dataset):
 
     def __init__(self, opt):
         path = opt['path']
-        cache_path = opt['cache_path']  # Will fail when multiple paths specified, must be specified in this case.
+        # Will fail when multiple paths specified, must be specified in this case.
+        cache_path = opt['cache_path']
         if os.path.exists(cache_path):
             self.paths = torch.load(cache_path)
         else:
@@ -36,8 +37,8 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
         padding_needed = self.pad_to - mel.shape[-1]
         mask = torch.zeros_like(mel)
         if padding_needed > 0:
-            mel = F.pad(mel, (0,padding_needed))
-            mask = F.pad(mask, (0,padding_needed), value=1)
+            mel = F.pad(mel, (0, padding_needed))
+            mask = F.pad(mask, (0, padding_needed), value=1)
 
         output = {
             'mel': mel,
@@ -62,13 +63,13 @@ if __name__ == '__main__':
         'n_workers': 0,
         'batch_size': 16,
     }
-    from data import create_dataset, create_dataloader
+    from data import create_dataloader, create_dataset
 
     ds = create_dataset(params)
     dl = create_dataloader(ds, params)
     i = 0
     for b in tqdm(dl):
-        #pass
+        # pass
         torchvision.utils.save_image((b['mel'].unsqueeze(1)+1)/2, f'{i}.png')
         i += 1
         if i > 20:

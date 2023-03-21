@@ -1,26 +1,29 @@
 import itertools
-import random
 from random import randrange
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch_intermediary as ml
 
-from models.arch_util import ResBlock, TimestepEmbedSequential, AttentionBlock, build_local_attention_mask, cGLU, \
-    RelativeQKBias
-from models.diffusion.nn import timestep_embedding, normalization, zero_module, conv_nd, linear
-from models.diffusion.unet_diffusion import TimestepBlock
-from trainer.networks import register_model
-from utils.util import checkpoint
+import dlas.torch_intermediary as ml
+from dlas.models.arch_util import (AttentionBlock, RelativeQKBias, ResBlock,
+                                   TimestepEmbedSequential,
+                                   build_local_attention_mask, cGLU)
+from dlas.models.diffusion.nn import (conv_nd, linear, normalization,
+                                      timestep_embedding, zero_module)
+from dlas.models.diffusion.unet_diffusion import TimestepBlock
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint
 
 
 class SubBlock(nn.Module):
     def __init__(self, inp_dim, contraction_dim, heads, dropout):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
-        self.attn = AttentionBlock(inp_dim, out_channels=contraction_dim, num_heads=heads)
-        self.register_buffer('mask', build_local_attention_mask(n=6000, l=64), persistent=False)
+        self.attn = AttentionBlock(
+            inp_dim, out_channels=contraction_dim, num_heads=heads)
+        self.register_buffer('mask', build_local_attention_mask(
+            n=6000, l=64), persistent=False)
         self.pos_bias = RelativeQKBias(l=64, max_positions=6000)
         ff_contract = contraction_dim//2
         self.ff1 = nn.Sequential(nn.Conv1d(inp_dim+contraction_dim, ff_contract, kernel_size=1),
@@ -31,7 +34,8 @@ class SubBlock(nn.Module):
                                  cGLU(ff_contract))
 
     def forward(self, x):
-        ah = self.dropout(self.attn(x, mask=self.mask, qk_bias=self.pos_bias(x.shape[-1])))
+        ah = self.dropout(self.attn(x, mask=self.mask,
+                          qk_bias=self.pos_bias(x.shape[-1])))
         h = torch.cat([ah, x], dim=1)
         hf = self.dropout(checkpoint(self.ff1, h))
         h = torch.cat([h, hf], dim=1)
@@ -44,17 +48,21 @@ class ConcatAttentionBlock(TimestepBlock):
         super().__init__()
         self.contraction_dim = contraction_dim
         self.prenorm = nn.GroupNorm(8, trunk_dim)
-        self.block1 = SubBlock(trunk_dim+blk_dim, contraction_dim, heads, dropout)
-        self.block2 = SubBlock(trunk_dim+blk_dim+contraction_dim*2, contraction_dim, heads, dropout)
-        self.out = nn.Conv1d(contraction_dim*4, trunk_dim, kernel_size=1, bias=False)
+        self.block1 = SubBlock(
+            trunk_dim+blk_dim, contraction_dim, heads, dropout)
+        self.block2 = SubBlock(
+            trunk_dim+blk_dim+contraction_dim*2, contraction_dim, heads, dropout)
+        self.out = nn.Conv1d(contraction_dim*4, trunk_dim,
+                             kernel_size=1, bias=False)
         self.out.weight.data.zero_()
 
     def forward(self, x, blk_emb):
         h = self.prenorm(x)
-        h = torch.cat([h, blk_emb.unsqueeze(-1).repeat(1,1,x.shape[-1])], dim=1)
+        h = torch.cat(
+            [h, blk_emb.unsqueeze(-1).repeat(1, 1, x.shape[-1])], dim=1)
         h = self.block1(h)
         h = self.block2(h)
-        h = self.out(h[:,-self.contraction_dim*4:])
+        h = self.out(h[:, -self.contraction_dim*4:])
         return h + x
 
 
@@ -72,10 +80,13 @@ class ConditioningEncoder(nn.Module):
         self.init = nn.Conv1d(spec_dim, hidden_dim, kernel_size=5, stride=2)
         # nn.Embedding
         self.resolution_embedding = ml.Embedding(num_resolutions, hidden_dim)
-        self.resolution_embedding.weight.data.mul(.1)  # Reduces the relative influence of this embedding from the start.
+        # Reduces the relative influence of this embedding from the start.
+        self.resolution_embedding.weight.data.mul(.1)
         for a in range(attn_blocks):
-            attn.append(AttentionBlock(hidden_dim, num_attn_heads, do_checkpoint=do_checkpointing))
-            attn.append(ResBlock(hidden_dim, dims=1, checkpointing_enabled=do_checkpointing))
+            attn.append(AttentionBlock(hidden_dim, num_attn_heads,
+                        do_checkpoint=do_checkpointing))
+            attn.append(ResBlock(hidden_dim, dims=1,
+                        checkpointing_enabled=do_checkpointing))
         self.attn = nn.Sequential(*attn)
         self.out = ml.Linear(hidden_dim, out_dim, bias=False)
         self.dim = hidden_dim
@@ -91,6 +102,7 @@ class TransformerDiffusion(nn.Module):
     """
     A diffusion model composed entirely of stacks of transformer layers. Why would you do it any other way?
     """
+
     def __init__(
             self,
             resolution_steps=8,
@@ -108,7 +120,8 @@ class TransformerDiffusion(nn.Module):
             dropout=0,
             use_fp16=False,
             # Parameters for regularization.
-            unconditioned_percentage=.1,  # This implements a mechanism similar to what is used in classifier-free training.
+            # This implements a mechanism similar to what is used in classifier-free training.
+            unconditioned_percentage=.1,
     ):
         super().__init__()
 
@@ -135,17 +148,21 @@ class TransformerDiffusion(nn.Module):
         )
         # nn.Embedding
         self.resolution_embed = ml.Embedding(resolution_steps, time_proj_dim)
-        self.conditioning_encoder = ConditioningEncoder(in_channels, model_channels, cond_proj_dim, resolution_steps, num_attn_heads=model_channels//64)
-        self.unconditioned_embedding = nn.Parameter(torch.randn(1,cond_proj_dim))
+        self.conditioning_encoder = ConditioningEncoder(
+            in_channels, model_channels, cond_proj_dim, resolution_steps, num_attn_heads=model_channels//64)
+        self.unconditioned_embedding = nn.Parameter(
+            torch.randn(1, cond_proj_dim))
 
-        self.inp_block = conv_nd(1, in_channels+input_vec_dim, model_channels, 3, 1, 1)
+        self.inp_block = conv_nd(
+            1, in_channels+input_vec_dim, model_channels, 3, 1, 1)
         self.layers = TimestepEmbedSequential(*[ConcatAttentionBlock(model_channels, contraction_dim, time_proj_dim*3 + cond_proj_dim,
                                                                      num_heads, dropout) for _ in range(num_layers)])
 
         self.out = nn.Sequential(
             normalization(model_channels),
             nn.SiLU(),
-            zero_module(conv_nd(1, model_channels, out_channels, 3, padding=1)),
+            zero_module(conv_nd(1, model_channels,
+                        out_channels, 3, padding=1)),
         )
 
         self.debug_codes = {}
@@ -163,17 +180,20 @@ class TransformerDiffusion(nn.Module):
         s_diff = s.shape[-1] - self.max_window
         if s_diff > 1:
             start = randrange(0, s_diff)
-            s = s[:,:,start:start+self.max_window]
+            s = s[:, :, start:start+self.max_window]
         s_prior = F.interpolate(s, scale_factor=.25, mode='nearest')
-        s_prior = F.interpolate(s_prior, size=(s.shape[-1],), mode='linear', align_corners=True)
+        s_prior = F.interpolate(s_prior, size=(
+            s.shape[-1],), mode='linear', align_corners=True)
 
         # Now diffuse the prior randomly between the x timestep and 0.
         adv = torch.rand_like(ts.float())
         t_prior = (adv * ts).long() - 1
         # The t_prior-1 below is an important detail: it forces s_prior to be unmodified for ts=0. It also means that t_prior is not on the same timescale as ts (instead it is shifted by 1).
-        s_prior_diffused = diffuser.q_sample(s_prior, t_prior-1, torch.randn_like(s_prior), allow_negatives=True)
+        s_prior_diffused = diffuser.q_sample(
+            s_prior, t_prior-1, torch.randn_like(s_prior), allow_negatives=True)
 
-        self.preprocessed = (s_prior_diffused, t_prior, torch.tensor([resolution] * x.shape[0], dtype=torch.long, device=x.device))
+        self.preprocessed = (s_prior_diffused, t_prior, torch.tensor(
+            [resolution] * x.shape[0], dtype=torch.long, device=x.device))
         return s
 
     def forward(self, x, timesteps, prior_timesteps=None, x_prior=None, resolution=None, conditioning_input=None, conditioning_free=False):
@@ -202,12 +222,16 @@ class TransformerDiffusion(nn.Module):
             x_prior, prior_timesteps, resolution = self.preprocessed
             self.preprocessed = None
         else:
-            assert x.shape[-1] > x_prior.shape[-1] * 3.9, f'{x.shape} {x_prior.shape}'
+            assert x.shape[-1] > x_prior.shape[-1] * \
+                3.9, f'{x.shape} {x_prior.shape}'
             if prior_timesteps is None:
                 # This is taken to mean a fully diffused prior was given.
-                prior_timesteps = torch.tensor([0], device=x.device)  # Assuming batch_size=1 for inference.
-            x_prior = F.interpolate(x_prior, size=(x.shape[-1],), mode='linear', align_corners=True)
-        assert torch.all(timesteps - prior_timesteps >= 0), f'Prior timesteps should always be lower (more resolved) than input timesteps. {timesteps}, {prior_timesteps}'
+                # Assuming batch_size=1 for inference.
+                prior_timesteps = torch.tensor([0], device=x.device)
+            x_prior = F.interpolate(x_prior, size=(
+                x.shape[-1],), mode='linear', align_corners=True)
+        assert torch.all(timesteps - prior_timesteps >=
+                         0), f'Prior timesteps should always be lower (more resolved) than input timesteps. {timesteps}, {prior_timesteps}'
 
         if conditioning_free:
             code_emb = self.unconditioned_embedding.repeat(x.shape[0], 1)
@@ -218,19 +242,26 @@ class TransformerDiffusion(nn.Module):
                 clen = randrange(MIN_COND_LEN, MAX_COND_LEN)
                 gap = conditioning_input.shape[-1] - clen
                 cstart = randrange(0, gap)
-                conditioning_input = conditioning_input[:,:,cstart:cstart+clen]
-            code_emb = self.conditioning_encoder(conditioning_input, resolution)
+                conditioning_input = conditioning_input[:,
+                                                        :, cstart:cstart+clen]
+            code_emb = self.conditioning_encoder(
+                conditioning_input, resolution)
 
         # Mask out the conditioning input and x_prior inputs for whole batch elements, implementing something similar to classifier-free guidance.
         if self.training and self.unconditioned_percentage > 0:
-            unconditioned_batches = torch.rand((x.shape[0], 1), device=x.device) < self.unconditioned_percentage
-            code_emb = torch.where(unconditioned_batches, self.unconditioned_embedding.repeat(code_emb.shape[0], 1), code_emb)
+            unconditioned_batches = torch.rand(
+                (x.shape[0], 1), device=x.device) < self.unconditioned_percentage
+            code_emb = torch.where(unconditioned_batches, self.unconditioned_embedding.repeat(
+                code_emb.shape[0], 1), code_emb)
 
         with torch.autocast(x.device.type, enabled=self.enable_fp16):
-            time_emb = self.time_embed(timestep_embedding(timesteps, self.time_embed_dim))
-            prior_time_emb = self.prior_time_embed(timestep_embedding(prior_timesteps, self.time_embed_dim))
+            time_emb = self.time_embed(
+                timestep_embedding(timesteps, self.time_embed_dim))
+            prior_time_emb = self.prior_time_embed(
+                timestep_embedding(prior_timesteps, self.time_embed_dim))
             res_emb = self.resolution_embed(resolution)
-            blk_emb = torch.cat([time_emb, prior_time_emb, res_emb, code_emb], dim=1)
+            blk_emb = torch.cat(
+                [time_emb, prior_time_emb, res_emb, code_emb], dim=1)
 
             h = torch.cat([x, x_prior], dim=1)
             h = self.inp_block(h)
@@ -250,13 +281,16 @@ class TransformerDiffusion(nn.Module):
         return out
 
     def get_grad_norm_parameter_groups(self):
-        attn1 = list(itertools.chain.from_iterable([lyr.block1.attn.parameters() for lyr in self.layers]))
-        attn2 = list(itertools.chain.from_iterable([lyr.block2.attn.parameters() for lyr in self.layers]))
+        attn1 = list(itertools.chain.from_iterable(
+            [lyr.block1.attn.parameters() for lyr in self.layers]))
+        attn2 = list(itertools.chain.from_iterable(
+            [lyr.block2.attn.parameters() for lyr in self.layers]))
         ff1 = list(itertools.chain.from_iterable([lyr.block1.ff1.parameters() for lyr in self.layers] +
                                                  [lyr.block1.ff2.parameters() for lyr in self.layers]))
         ff2 = list(itertools.chain.from_iterable([lyr.block2.ff1.parameters() for lyr in self.layers] +
                                                  [lyr.block2.ff2.parameters() for lyr in self.layers]))
-        blkout_layers = list(itertools.chain.from_iterable([lyr.out.parameters() for lyr in self.layers]))
+        blkout_layers = list(itertools.chain.from_iterable(
+            [lyr.out.parameters() for lyr in self.layers]))
         groups = {
             'prenorms': list(itertools.chain.from_iterable([lyr.prenorm.parameters() for lyr in self.layers])),
             'blk1_attention_layers': attn1,
@@ -276,7 +310,8 @@ class TransformerDiffusion(nn.Module):
         return groups
 
     def before_step(self, step):
-        scaled_grad_parameters = list(itertools.chain.from_iterable([lyr.out.parameters() for lyr in self.layers]))
+        scaled_grad_parameters = list(itertools.chain.from_iterable(
+            [lyr.out.parameters() for lyr in self.layers]))
         # Scale back the gradients of the blkout and prenorm layers by a constant factor. These get two orders of magnitudes
         # higher gradients. Ideally we would use parameter groups, but ZeroRedundancyOptimizer makes this trickier than
         # directly fiddling with the gradients.
@@ -291,14 +326,13 @@ def register_transformer_diffusion13(opt_net, opt):
 
 
 def test_tfd():
-    from models.diffusion.respace import SpacedDiffusion
-    from models.diffusion.respace import space_timesteps
     from models.diffusion.gaussian_diffusion import get_named_beta_schedule
+    from models.diffusion.respace import SpacedDiffusion, space_timesteps
     diffuser = SpacedDiffusion(use_timesteps=space_timesteps(4000, [4000]), model_mean_type='epsilon',
-                    model_var_type='learned_range', loss_type='mse',
-                    betas=get_named_beta_schedule('linear', 4000))
-    clip = torch.randn(2,256,10336)
-    cond = torch.randn(2,256,10336)
+                               model_var_type='learned_range', loss_type='mse',
+                               betas=get_named_beta_schedule('linear', 4000))
+    clip = torch.randn(2, 256, 10336)
+    cond = torch.randn(2, 256, 10336)
     ts = torch.LongTensor([0, 0])
     model = TransformerDiffusion(in_channels=256, model_channels=1024, contraction_dim=512,
                                  num_heads=512//64, input_vec_dim=256, num_layers=12, dropout=.1,
@@ -316,5 +350,5 @@ def remove_conditioning(sd_path):
 
 
 if __name__ == '__main__':
-    #remove_conditioning('X:\\dlas\\experiments\\train_music_diffusion_multilevel_sr_pre\\models\\12500_generator.pth')
+    # remove_conditioning('X:\\dlas\\experiments\\train_music_diffusion_multilevel_sr_pre\\models\\12500_generator.pth')
     test_tfd()

@@ -9,11 +9,11 @@ import torch.nn.functional as F
 import yaml
 from tqdm import tqdm
 
-from data.audio.unsupervised_audio_dataset import load_audio
-from data.util import is_audio_file
-from scripts.audio.gen.speech_synthesis_utils import wav_to_mel
-from utils.options import Loader
-from utils.util import load_model_from_config
+from dlas.data.audio.unsupervised_audio_dataset import load_audio
+from dlas.data.util import is_audio_file
+from dlas.scripts.audio.gen.speech_synthesis_utils import wav_to_mel
+from dlas.utils.options import Loader
+from dlas.utils.util import load_model_from_config
 
 clip_model = None
 
@@ -39,7 +39,8 @@ def process_subdir(subdir, options, clip_sz):
     global clip_model
     if clip_model is None:
         print('Loading CLIP model..')
-        clip_model = load_model_from_config(preloaded_options=options, model_name='clip', also_load_savepoint=True).cuda()
+        clip_model = load_model_from_config(
+            preloaded_options=options, model_name='clip', also_load_savepoint=True).cuda()
         clip_model.eval()
 
     with torch.no_grad():
@@ -76,7 +77,7 @@ def process_subdir(subdir, options, clip_sz):
                 sims = outp
             else:
                 if outp.shape[-1] != 256:
-                    outp = F.pad(outp, (0,256-outp.shape[-1]))
+                    outp = F.pad(outp, (0, 256-outp.shape[-1]))
                 sims = torch.cat([sims, outp], dim=0)
 
         simmap = {}
@@ -90,9 +91,11 @@ def process_subdir(subdir, options, clip_sz):
             if n == 1:
                 simpaths.append(rel)
             else:
-                for i in range(1,n):  # The first entry is always the file itself.
+                # The first entry is always the file itself.
+                for i in range(1, n):
                     top_ind = top3.indices[i]
-                    simpaths.append(str(os.path.relpath(paths[top_ind], root)).replace('\\', '/'))
+                    simpaths.append(
+                        str(os.path.relpath(paths[top_ind], root)).replace('\\', '/'))
             simmap[rel] = simpaths
         torch.save(simmap, output_file)
 
@@ -105,10 +108,14 @@ if __name__ == '__main__':
     is consumed during training when the dataset searches for conditioning clips.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument('-o', type=str, help='Path to the options YAML file used to train the CLIP model', default='../options/train_voice_voice_clip.yml')
-    parser.add_argument('--num_workers', type=int, help='Number concurrent processes to use', default=4)
-    parser.add_argument('--path', type=str, help='Root path to search for audio directories from', default='Y:\\clips\\for_finetuning\\mlp\\good')
-    parser.add_argument('--clip_size', type=int, help='Amount of audio samples to pull from each file', default=22050)
+    parser.add_argument('-o', type=str, help='Path to the options YAML file used to train the CLIP model',
+                        default='../options/train_voice_voice_clip.yml')
+    parser.add_argument('--num_workers', type=int,
+                        help='Number concurrent processes to use', default=4)
+    parser.add_argument('--path', type=str, help='Root path to search for audio directories from',
+                        default='Y:\\clips\\for_finetuning\\mlp\\good')
+    parser.add_argument('--clip_size', type=int,
+                        help='Amount of audio samples to pull from each file', default=22050)
     args = parser.parse_args()
 
     with open(args.o, mode='r') as f:
@@ -124,5 +131,3 @@ if __name__ == '__main__':
     else:
         for subdir in tqdm(all_files):
             fn(subdir)
-
-

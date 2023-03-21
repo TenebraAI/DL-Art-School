@@ -13,17 +13,16 @@
 # limitations under the License.
 # ==============================================================================
 
+from math import sqrt
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch_intermediary as ml
-
-from math import sqrt
-
 from torch.utils.checkpoint import checkpoint
 
-from trainer.networks import register_model
+import dlas.torch_intermediary as ml
+from dlas.trainer.networks import register_model
 
 Linear = ml.Linear
 ConvTranspose2d = nn.ConvTranspose2d
@@ -43,7 +42,8 @@ def silu(x):
 class DiffusionEmbedding(nn.Module):
     def __init__(self, max_steps):
         super().__init__()
-        self.register_buffer('embedding', self._build_embedding(max_steps), persistent=False)
+        self.register_buffer('embedding', self._build_embedding(
+            max_steps), persistent=False)
         self.projection1 = Linear(128, 512)
         self.projection2 = Linear(512, 512)
 
@@ -76,8 +76,10 @@ class DiffusionEmbedding(nn.Module):
 class SpectrogramUpsampler(nn.Module):
     def __init__(self, n_mels):
         super().__init__()
-        self.conv1 = ConvTranspose2d(1, 1, [3, 32], stride=[1, 16], padding=[1, 8])
-        self.conv2 = ConvTranspose2d(1, 1, [3, 32], stride=[1, 16], padding=[1, 8])
+        self.conv1 = ConvTranspose2d(1, 1, [3, 32], stride=[
+                                     1, 16], padding=[1, 8])
+        self.conv2 = ConvTranspose2d(1, 1, [3, 32], stride=[
+                                     1, 16], padding=[1, 8])
 
     def forward(self, x):
         x = torch.unsqueeze(x, 1)
@@ -98,27 +100,32 @@ class ResidualBlock(nn.Module):
         :param uncond: disable spectrogram conditional
         '''
         super().__init__()
-        self.dilated_conv = Conv1d(residual_channels, 2 * residual_channels, 3, padding=dilation, dilation=dilation)
+        self.dilated_conv = Conv1d(
+            residual_channels, 2 * residual_channels, 3, padding=dilation, dilation=dilation)
         self.diffusion_projection = Linear(512, residual_channels)
         if not uncond:  # conditional model
-            self.conditioner_projection = Conv1d(n_mels, 2 * residual_channels, 1)
+            self.conditioner_projection = Conv1d(
+                n_mels, 2 * residual_channels, 1)
         else:  # unconditional model
             self.conditioner_projection = None
 
-        self.output_projection = Conv1d(residual_channels, 2 * residual_channels, 1)
+        self.output_projection = Conv1d(
+            residual_channels, 2 * residual_channels, 1)
 
     def forward(self, x, diffusion_step, conditioner=None):
         assert (conditioner is None and self.conditioner_projection is None) or \
                (conditioner is not None and self.conditioner_projection is not None)
 
-        diffusion_step = self.diffusion_projection(diffusion_step).unsqueeze(-1)
+        diffusion_step = self.diffusion_projection(
+            diffusion_step).unsqueeze(-1)
         y = x + diffusion_step
         if self.conditioner_projection is None:  # using a unconditional model
             y = self.dilated_conv(y)
         else:
             y = self.dilated_conv(y)
             conditioner = self.conditioner_projection(conditioner)
-            conditioner = F.interpolate(conditioner, size=y.shape[-1], mode='nearest')
+            conditioner = F.interpolate(
+                conditioner, size=y.shape[-1], mode='nearest')
             y = y + conditioner
 
         gate, filter = torch.chunk(y, 2, dim=1)
@@ -141,7 +148,8 @@ class DiffWave(nn.Module):
             self.spectrogram_upsampler = SpectrogramUpsampler(n_mels)
 
         self.residual_layers = nn.ModuleList([
-            ResidualBlock(n_mels, residual_channels, 2 ** (i % dilation_cycle_length), uncond=unconditional)
+            ResidualBlock(n_mels, residual_channels, 2 ** (i %
+                          dilation_cycle_length), uncond=unconditional)
             for i in range(residual_layers)
         ])
         self.skip_projection = Conv1d(residual_channels, residual_channels, 1)
@@ -177,4 +185,5 @@ def register_diffwave(opt_net, opt):
 
 if __name__ == '__main__':
     model = DiffWave()
-    model(torch.randn(2,1,65536), torch.tensor([500,3999]), torch.randn(2,128,256))
+    model(torch.randn(2, 1, 65536), torch.tensor(
+        [500, 3999]), torch.randn(2, 128, 256))

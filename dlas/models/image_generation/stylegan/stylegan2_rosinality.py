@@ -1,18 +1,14 @@
 import math
 import random
-import functools
-import operator
 
 import torch
 from torch import nn
 from torch.nn import functional as F
-from torch.autograd import Function
-
 
 # Ops -> The rosinality repo uses native cuda kernels for fused LeakyReLUs and upsamplers. This version extracts the
 # "cpu" alternative code and uses that instead for compatibility reasons.
-from trainer.networks import register_model
-from utils.util import opt_get
+from dlas.trainer.networks import register_model
+from dlas.utils.util import opt_get
 
 
 class FusedLeakyReLU(nn.Module):
@@ -67,12 +63,13 @@ def upfirdn2d_native(
     out = out.view(-1, in_h * up_y, in_w * up_x, minor)
 
     out = F.pad(
-        out, [0, 0, max(pad_x0, 0), max(pad_x1, 0), max(pad_y0, 0), max(pad_y1, 0)]
+        out, [0, 0, max(pad_x0, 0), max(pad_x1, 0),
+              max(pad_y0, 0), max(pad_y1, 0)]
     )
     out = out[
         :,
-        max(-pad_y0, 0) : out.shape[1] - max(-pad_y1, 0),
-        max(-pad_x0, 0) : out.shape[2] - max(-pad_x1, 0),
+        max(-pad_y0, 0): out.shape[1] - max(-pad_y1, 0),
+        max(-pad_x0, 0): out.shape[2] - max(-pad_x1, 0),
         :,
     ]
 
@@ -133,7 +130,8 @@ class Upsample(nn.Module):
         self.pad = (pad0, pad1)
 
     def forward(self, input):
-        out = upfirdn2d(input, self.kernel, up=self.factor, down=1, pad=self.pad)
+        out = upfirdn2d(input, self.kernel, up=self.factor,
+                        down=1, pad=self.pad)
 
         return out
 
@@ -154,7 +152,8 @@ class Downsample(nn.Module):
         self.pad = (pad0, pad1)
 
     def forward(self, input):
-        out = upfirdn2d(input, self.kernel, up=1, down=self.factor, pad=self.pad)
+        out = upfirdn2d(input, self.kernel, up=1,
+                        down=self.factor, pad=self.pad)
 
         return out
 
@@ -280,7 +279,8 @@ class ModulatedConv2d(nn.Module):
             pad0 = (p + 1) // 2 + factor - 1
             pad1 = p // 2 + 1
 
-            self.blur = Blur(blur_kernel, pad=(pad0, pad1), upsample_factor=factor)
+            self.blur = Blur(blur_kernel, pad=(
+                pad0, pad1), upsample_factor=factor)
 
         if downsample:
             factor = 2
@@ -330,7 +330,8 @@ class ModulatedConv2d(nn.Module):
             weight = weight.transpose(1, 2).reshape(
                 batch * in_channel, self.out_channel, self.kernel_size, self.kernel_size
             )
-            out = F.conv_transpose2d(input, weight, padding=0, stride=2, groups=batch)
+            out = F.conv_transpose2d(
+                input, weight, padding=0, stride=2, groups=batch)
             _, _, height, width = out.shape
             out = out.view(batch, self.out_channel, height, width)
             out = self.blur(out)
@@ -423,7 +424,8 @@ class ToRGB(nn.Module):
         if upsample:
             self.upsample = Upsample(blur_kernel)
 
-        self.conv = ModulatedConv2d(in_channel, 3, 1, style_dim, demodulate=False)
+        self.conv = ModulatedConv2d(
+            in_channel, 3, 1, style_dim, demodulate=False)
         self.bias = nn.Parameter(torch.zeros(1, 3, 1, 1))
 
     def forward(self, input, style, skip=None):
@@ -496,7 +498,8 @@ class Generator(nn.Module):
         for layer_idx in range(self.num_layers):
             res = (layer_idx + 5) // 2
             shape = [1, 1, 2 ** res, 2 ** res]
-            self.noises.register_buffer(f"noise_{layer_idx}", torch.randn(*shape))
+            self.noises.register_buffer(
+                f"noise_{layer_idx}", torch.randn(*shape))
 
         for i in range(3, self.log_size + 1):
             out_channel = self.channels[2 ** i]
@@ -578,7 +581,8 @@ class Generator(nn.Module):
 
             for style in styles:
                 style_t.append(
-                    truncation_latent + truncation * (style - truncation_latent)
+                    truncation_latent + truncation *
+                    (style - truncation_latent)
                 )
 
             styles = style_t
@@ -597,7 +601,8 @@ class Generator(nn.Module):
                 inject_index = random.randint(1, self.n_latent - 1)
 
             latent = styles[0].unsqueeze(1).repeat(1, inject_index, 1)
-            latent2 = styles[1].unsqueeze(1).repeat(1, self.n_latent - inject_index, 1)
+            latent2 = styles[1].unsqueeze(1).repeat(
+                1, self.n_latent - inject_index, 1)
 
             latent = torch.cat([latent, latent2], 1)
 
@@ -723,7 +728,8 @@ class Discriminator(nn.Module):
 
         self.final_conv = ConvLayer(in_channel + 1, channels[4], 3)
         self.final_linear = nn.Sequential(
-            EqualLinear(channels[4] * 4 * 4, channels[4], activation="fused_lrelu"),
+            EqualLinear(channels[4] * 4 * 4, channels[4],
+                        activation="fused_lrelu"),
             EqualLinear(channels[4], 1),
         )
 
@@ -752,6 +758,7 @@ class Discriminator(nn.Module):
 def register_stylegan2_rosinality_gen(opt_net, opt):
     kw = opt_get(opt_net, ['kwargs'], {})
     return Generator(**kw)
+
 
 @register_model
 def register_stylegan2_rosinality_disc(opt_net, opt):

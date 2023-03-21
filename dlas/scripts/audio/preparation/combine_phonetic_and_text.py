@@ -19,7 +19,8 @@ if __name__ == '__main__':
                 print(f'Error processing line {line}')
 
     with open(phoneme_file, 'r', encoding='utf-8') as f:
-        wf = open(os.path.join(basepath, 'transcribed-phoneme-english-oco.tsv'), 'w', encoding='utf-8')
+        wf = open(os.path.join(
+            basepath, 'transcribed-phoneme-english-oco.tsv'), 'w', encoding='utf-8')
         for line in f.readlines():
             spl = line.split('\t')
             if len(spl) == 3:

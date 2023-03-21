@@ -1,11 +1,16 @@
-from models.diffusion.fp16_util import convert_module_to_f32, convert_module_to_f16
-from models.diffusion.nn import timestep_embedding, normalization, zero_module, conv_nd, linear
-from models.diffusion.unet_diffusion import AttentionPool2d, AttentionBlock, ResBlock, TimestepEmbedSequential, \
-    Downsample, Upsample
 import torch
 import torch.nn as nn
 
-from trainer.networks import register_model
+from dlas.models.diffusion.fp16_util import (convert_module_to_f16,
+                                             convert_module_to_f32)
+from dlas.models.diffusion.nn import (conv_nd, linear, normalization,
+                                      timestep_embedding, zero_module)
+from dlas.models.diffusion.unet_diffusion import (AttentionBlock,
+                                                  AttentionPool2d, Downsample,
+                                                  ResBlock,
+                                                  TimestepEmbedSequential,
+                                                  Upsample)
+from dlas.trainer.networks import register_model
 
 
 class DiffusionVocoder(nn.Module):
@@ -46,11 +51,12 @@ class DiffusionVocoder(nn.Module):
             in_channels=1,
             out_channels=2,  # mean and variance
             spectrogram_channels=80,
-            spectrogram_conditioning_level=3,  # Level at which spectrogram conditioning is applied to the waveform.
+            # Level at which spectrogram conditioning is applied to the waveform.
+            spectrogram_conditioning_level=3,
             dropout=0,
             # 106496 -> 26624 -> 6656 -> 16664 -> 416 -> 104 -> 26  for ~5secs@22050Hz
             channel_mult=(1, 2, 4, 8, 16, 32, 64),
-            attention_resolutions=(16,32,64),
+            attention_resolutions=(16, 32, 64),
             conv_resample=True,
             dims=1,
             num_classes=None,
@@ -95,7 +101,8 @@ class DiffusionVocoder(nn.Module):
         self.input_blocks = nn.ModuleList(
             [
                 TimestepEmbedSequential(
-                    conv_nd(dims, in_channels, model_channels, kernel_size, padding=padding)
+                    conv_nd(dims, in_channels, model_channels,
+                            kernel_size, padding=padding)
                 )
             ]
         )
@@ -104,7 +111,8 @@ class DiffusionVocoder(nn.Module):
         ch = model_channels
         ds = 1
 
-        spec_chs = channel_mult[spectrogram_conditioning_level] * model_channels
+        spec_chs = channel_mult[spectrogram_conditioning_level] * \
+            model_channels
         self.spectrogram_conditioner = nn.Sequential(
             conv_nd(dims, self.spectrogram_channels, spec_chs, 1),
             normalization(spec_chs),
@@ -119,7 +127,8 @@ class DiffusionVocoder(nn.Module):
 
         for level, mult in enumerate(channel_mult):
             if level == spectrogram_conditioning_level+1:
-                ch *= 2  # At this level, the spectrogram is concatenated onto the input.
+                # At this level, the spectrogram is concatenated onto the input.
+                ch *= 2
 
             for _ in range(num_res_blocks):
                 layers = [
@@ -248,7 +257,8 @@ class DiffusionVocoder(nn.Module):
         self.out = nn.Sequential(
             normalization(ch),
             nn.SiLU(),
-            zero_module(conv_nd(dims, model_channels, out_channels, kernel_size, padding=padding)),
+            zero_module(conv_nd(dims, model_channels, out_channels,
+                        kernel_size, padding=padding)),
         )
 
     def convert_to_fp16(self):
@@ -278,14 +288,16 @@ class DiffusionVocoder(nn.Module):
         """
         assert x.shape[-1] % 4096 == 0  # This model operates at base//4096 at it's bottom levels, thus this requirement.
         hs = []
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+        emb = self.time_embed(timestep_embedding(
+            timesteps, self.model_channels))
         conditioning = self.spectrogram_conditioner(spectrogram)
 
         h = x.type(self.dtype)
         for k, module in enumerate(self.input_blocks):
             h = module(h, emb)
             if k == self.input_block_injection_point:
-                cond = nn.functional.interpolate(conditioning, size=h.shape[-self.dims:], mode='nearest')
+                cond = nn.functional.interpolate(
+                    conditioning, size=h.shape[-self.dims:], mode='nearest')
                 h = torch.cat([h, cond], dim=1)
                 h = self.convergence_conv(h)
             hs.append(h)

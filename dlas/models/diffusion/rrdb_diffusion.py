@@ -2,12 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.arch_util import ConvGnLelu, default_init_weights, make_layer
-from models.diffusion.nn import timestep_embedding
-from trainer.networks import register_model
-from utils.util import checkpoint
-import torch_intermediary as ml
-
+import dlas.torch_intermediary as ml
+from dlas.models.arch_util import ConvGnLelu, default_init_weights, make_layer
+from dlas.models.diffusion.nn import timestep_embedding
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint
 
 # Conditionally uses torch's checkpoint functionality if it is enabled in the opt file.
 
@@ -26,7 +25,8 @@ class ResidualDenseBlock(nn.Module):
         super(ResidualDenseBlock, self).__init__()
         self.embedding = embedding
         if embedding:
-            self.first_conv = ConvGnLelu(mid_channels, mid_channels, activation=True, norm=False, bias=True)
+            self.first_conv = ConvGnLelu(
+                mid_channels, mid_channels, activation=True, norm=False, bias=True)
             self.emb_layers = nn.Sequential(
                 nn.SiLU(),
                 ml.Linear(
@@ -85,7 +85,8 @@ class RRDB(nn.Module):
 
     def __init__(self, mid_channels, growth_channels=32):
         super(RRDB, self).__init__()
-        self.rdb1 = ResidualDenseBlock(mid_channels, growth_channels, embedding=True)
+        self.rdb1 = ResidualDenseBlock(
+            mid_channels, growth_channels, embedding=True)
         self.rdb2 = ResidualDenseBlock(mid_channels, growth_channels)
         self.rdb3 = ResidualDenseBlock(mid_channels, growth_channels)
         self.normalize = nn.GroupNorm(num_groups=8, num_channels=mid_channels)
@@ -137,9 +138,12 @@ class RRDBNet(nn.Module):
         self.mid_channels = mid_channels
 
         # The diffusion RRDB starts with a full resolution image and downsamples into a .25 working space
-        self.input_block = ConvGnLelu(in_channels, mid_channels, kernel_size=7, stride=1, activation=True, norm=False, bias=True)
-        self.down1 = ConvGnLelu(mid_channels, mid_channels, kernel_size=3, stride=2, activation=True, norm=False, bias=True)
-        self.down2 = ConvGnLelu(mid_channels, mid_channels, kernel_size=3, stride=2, activation=True, norm=False, bias=True)
+        self.input_block = ConvGnLelu(
+            in_channels, mid_channels, kernel_size=7, stride=1, activation=True, norm=False, bias=True)
+        self.down1 = ConvGnLelu(mid_channels, mid_channels, kernel_size=3,
+                                stride=2, activation=True, norm=False, bias=True)
+        self.down2 = ConvGnLelu(mid_channels, mid_channels, kernel_size=3,
+                                stride=2, activation=True, norm=False, bias=True)
 
         # Guided diffusion uses a time embedding.
         time_embed_dim = mid_channels * 4
@@ -155,16 +159,21 @@ class RRDBNet(nn.Module):
             mid_channels=mid_channels,
             growth_channels=growth_channels)
 
-        self.conv_body = nn.Conv2d(self.mid_channels, self.mid_channels, 3, 1, 1)
+        self.conv_body = nn.Conv2d(
+            self.mid_channels, self.mid_channels, 3, 1, 1)
         # upsample
-        self.conv_up1 = nn.Conv2d(self.mid_channels, self.mid_channels, 3, 1, 1)
-        self.conv_up2 = nn.Conv2d(self.mid_channels*2, self.mid_channels, 3, 1, 1)
+        self.conv_up1 = nn.Conv2d(
+            self.mid_channels, self.mid_channels, 3, 1, 1)
+        self.conv_up2 = nn.Conv2d(
+            self.mid_channels*2, self.mid_channels, 3, 1, 1)
         self.conv_up3 = None
-        self.conv_hr = nn.Conv2d(self.mid_channels*2, self.mid_channels, 3, 1, 1)
+        self.conv_hr = nn.Conv2d(
+            self.mid_channels*2, self.mid_channels, 3, 1, 1)
         self.conv_last = nn.Conv2d(self.mid_channels, out_channels, 3, 1, 1)
 
         self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
-        self.normalize = nn.GroupNorm(num_groups=8, num_channels=self.mid_channels)
+        self.normalize = nn.GroupNorm(
+            num_groups=8, num_channels=self.mid_channels)
 
         for m in [
             self.conv_body, self.conv_up1,
@@ -178,13 +187,16 @@ class RRDBNet(nn.Module):
         emb = self.time_embed(timestep_embedding(timesteps, self.mid_channels))
 
         _, _, new_height, new_width = x.shape
-        upsampled = F.interpolate(low_res, (new_height, new_width), mode="bilinear")
+        upsampled = F.interpolate(
+            low_res, (new_height, new_width), mode="bilinear")
         x = torch.cat([x, upsampled], dim=1)
 
         if correction_factors is not None:
-            correction_factors = correction_factors.view(x.shape[0], -1, 1, 1).repeat(1, 1, new_height, new_width)
+            correction_factors = correction_factors.view(
+                x.shape[0], -1, 1, 1).repeat(1, 1, new_height, new_width)
         else:
-            correction_factors = torch.zeros((b, self.num_corruptions, new_height, new_width), dtype=torch.float, device=x.device)
+            correction_factors = torch.zeros(
+                (b, self.num_corruptions, new_height, new_width), dtype=torch.float, device=x.device)
         x = torch.cat([x, correction_factors], dim=1)
 
         d1 = self.input_block(x)
@@ -213,9 +225,9 @@ def register_rrdb_diffusion(opt_net, opt):
 
 
 if __name__ == '__main__':
-    model = RRDBNet(6,6)
-    x = torch.randn(1,3,128,128)
-    l = torch.randn(1,3,32,32)
+    model = RRDBNet(6, 6)
+    x = torch.randn(1, 3, 128, 128)
+    l = torch.randn(1, 3, 32, 32)
     t = torch.LongTensor([555])
     y = model(x, t, l)
     print(y.shape, y.mean(), y.std(), y.min(), y.max())

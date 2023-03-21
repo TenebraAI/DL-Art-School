@@ -12,13 +12,15 @@ import torchaudio
 from tqdm import tqdm
 from transformers import Wav2Vec2Processor
 
-from data.audio.paired_voice_audio_dataset import CharacterTokenizer
-from data.audio.unsupervised_audio_dataset import load_audio, load_similar_clips
-from utils.util import opt_get
+from dlas.data.audio.paired_voice_audio_dataset import CharacterTokenizer
+from dlas.data.audio.unsupervised_audio_dataset import (load_audio,
+                                                        load_similar_clips)
+from dlas.utils.util import opt_get
 
 
 def parse_tsv_aligned_codes(line, base_path):
     fpt = line.strip().split('\t')
+
     def convert_string_list_to_tensor(strlist):
         if strlist.startswith('['):
             strlist = strlist[1:]
@@ -43,10 +45,12 @@ class FastPairedVoiceDataset(torch.utils.data.Dataset):
 
     The upshot is that this dataset loads extremely quickly and consumes almost no system memory.
     """
+
     def __init__(self, hparams):
         self.paths = hparams['path']
         phoneme_paths = hparams['phoneme_paths']
-        self.paths = [(p, False) for p in self.paths] + [(p, True) for p in phoneme_paths]
+        self.paths = [(p, False) for p in self.paths] + [(p, True)
+                                                         for p in phoneme_paths]
 
         self.paths_size_bytes = [os.path.getsize(p) for p, _ in self.paths]
         self.total_size_bytes = sum(self.paths_size_bytes)
@@ -54,28 +58,36 @@ class FastPairedVoiceDataset(torch.utils.data.Dataset):
 
         self.normal_text_end_token = hparams['normal_text_end_token']
         self.load_conditioning = opt_get(hparams, ['load_conditioning'], False)
-        self.conditioning_candidates = opt_get(hparams, ['num_conditioning_candidates'], 1)
-        self.conditioning_length = opt_get(hparams, ['conditioning_length'], 44100)
-        self.produce_ctc_metadata = opt_get(hparams, ['produce_ctc_metadata'], False)
-        self.debug_failures = opt_get(hparams, ['debug_loading_failures'], False)
+        self.conditioning_candidates = opt_get(
+            hparams, ['num_conditioning_candidates'], 1)
+        self.conditioning_length = opt_get(
+            hparams, ['conditioning_length'], 44100)
+        self.produce_ctc_metadata = opt_get(
+            hparams, ['produce_ctc_metadata'], False)
+        self.debug_failures = opt_get(
+            hparams, ['debug_loading_failures'], False)
         self.text_cleaners = hparams.text_cleaners
         self.sample_rate = hparams.sample_rate
         self.aligned_codes_to_audio_ratio = 443 * self.sample_rate // 22050
         self.max_wav_len = opt_get(hparams, ['max_wav_length'], None)
-        self.load_aligned_codes = opt_get(hparams, ['load_aligned_codes'], False)
+        self.load_aligned_codes = opt_get(
+            hparams, ['load_aligned_codes'], False)
         if self.max_wav_len is not None:
             self.max_aligned_codes = self.max_wav_len // self.aligned_codes_to_audio_ratio
         self.max_text_len = opt_get(hparams, ['max_text_length'], None)
         assert self.max_wav_len is not None and self.max_text_len is not None
         self.use_bpe_tokenizer = opt_get(hparams, ['use_bpe_tokenizer'], False)
         if self.use_bpe_tokenizer:
-            from data.audio.voice_tokenizer import VoiceBpeTokenizer
-            self.tokenizer = VoiceBpeTokenizer(opt_get(hparams, ['tokenizer_vocab'], '../experiments/bpe_lowercase_asr_256.json'))
+            from dlas.data.audio.voice_tokenizer import VoiceBpeTokenizer
+            self.tokenizer = VoiceBpeTokenizer(opt_get(
+                hparams, ['tokenizer_vocab'], '../experiments/bpe_lowercase_asr_256.json'))
         else:
             self.tokenizer = CharacterTokenizer()
-        self.ipa_phoneme_tokenizer = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-lv-60-espeak-cv-ft").tokenizer
+        self.ipa_phoneme_tokenizer = Wav2Vec2Processor.from_pretrained(
+            "facebook/wav2vec2-lv-60-espeak-cv-ft").tokenizer
         self.ipa_phoneme_tokenizer.do_phonemize = False
-        self.skipped_items = 0  # records how many items are skipped when accessing an index.
+        # records how many items are skipped when accessing an index.
+        self.skipped_items = 0
 
         self.load_times = torch.zeros((256,))
         self.load_ind = 0
@@ -117,7 +129,8 @@ class FastPairedVoiceDataset(torch.utils.data.Dataset):
             try:  # This can fail when seeking to a UTF-8 escape byte.
                 f.readline()
             except:
-                return self.load_random_line(depth=depth + 1)  # On failure, just recurse and try again.
+                # On failure, just recurse and try again.
+                return self.load_random_line(depth=depth + 1)
             l2 = f.readline()
 
         if l2:
@@ -126,14 +139,16 @@ class FastPairedVoiceDataset(torch.utils.data.Dataset):
                 return parse_tsv_aligned_codes(l2, base_path), type, is_phonetic
             except:
                 print(f"error parsing random offset: {sys.exc_info()}")
-        return self.load_random_line(depth=depth+1)  # On failure, just recurse and try again.
+        # On failure, just recurse and try again.
+        return self.load_random_line(depth=depth+1)
 
     def get_ctc_metadata(self, codes):
         grouped = groupby(codes.tolist())
         rcodes, repeats, seps = [], [], [0]
         for val, group in grouped:
             if val == 0:
-                seps[-1] = len(list(group))  # This is a very important distinction! It means the padding belongs to the character proceeding it.
+                # This is a very important distinction! It means the padding belongs to the character proceeding it.
+                seps[-1] = len(list(group))
             else:
                 rcodes.append(val)
                 repeats.append(len(list(group)))
@@ -149,7 +164,8 @@ class FastPairedVoiceDataset(torch.utils.data.Dataset):
         if rcodes.shape[0] < self.max_text_len:
             gap = self.max_text_len - rcodes.shape[0]
             rcodes = F.pad(rcodes, (0, gap))
-            repeats = F.pad(repeats, (0, gap), value=1)  # The minimum value for repeats is 1, hence this is the pad value too.
+            # The minimum value for repeats is 1, hence this is the pad value too.
+            repeats = F.pad(repeats, (0, gap), value=1)
             seps = F.pad(seps, (0, gap))
         elif rcodes.shape[0] > self.max_text_len:
             rcodes = rcodes[:self.max_text_len]
@@ -171,7 +187,7 @@ class FastPairedVoiceDataset(torch.utils.data.Dataset):
             if text is None or len(text.strip()) == 0:
                 raise ValueError
             cond, cond_is_self = load_similar_clips(apt[0], self.conditioning_length, self.sample_rate,
-                                      n=self.conditioning_candidates) if self.load_conditioning else (None, False)
+                                                    n=self.conditioning_candidates) if self.load_conditioning else (None, False)
         except:
             if self.skipped_items > 100:
                 raise  # Rethrow if we have nested too far.
@@ -185,12 +201,13 @@ class FastPairedVoiceDataset(torch.utils.data.Dataset):
         self.skipped_items = 0
         if wav is None or \
             (self.max_wav_len is not None and wav.shape[-1] > self.max_wav_len) or \
-            (self.max_text_len is not None and tseq.shape[0] > self.max_text_len):
+                (self.max_text_len is not None and tseq.shape[0] > self.max_text_len):
             # Basically, this audio file is nonexistent or too long to be supported by the dataset.
             # It's hard to handle this situation properly. Best bet is to return the a random valid token and skew the dataset somewhat as a result.
             if self.debug_failures:
-                print(f"error loading {path}: ranges are out of bounds; {wav.shape[-1]}, {tseq.shape[0]}")
-            rv = random.randint(0,len(self)-1)
+                print(
+                    f"error loading {path}: ranges are out of bounds; {wav.shape[-1]}, {tseq.shape[0]}")
+            rv = random.randint(0, len(self)-1)
             return self[rv]
 
         # Shift phonetic token and aligned_code tokens over.
@@ -206,7 +223,8 @@ class FastPairedVoiceDataset(torch.utils.data.Dataset):
         if wav.shape[-1] != self.max_wav_len:
             wav = F.pad(wav, (0, self.max_wav_len - wav.shape[-1]))
             # These codes are aligned to audio inputs, so make sure to pad them as well.
-            aligned_codes = F.pad(aligned_codes, (0, self.max_aligned_codes-aligned_codes.shape[0]))
+            aligned_codes = F.pad(
+                aligned_codes, (0, self.max_aligned_codes-aligned_codes.shape[0]))
         if tseq.shape[0] != self.max_text_len:
             tseq = F.pad(tseq, (0, self.max_text_len - tseq.shape[0]))
 
@@ -237,7 +255,8 @@ class FastPairedVoiceDataset(torch.utils.data.Dataset):
         return res
 
     def __len__(self):
-        return self.total_size_bytes // 1000  # 1000 cuts down a TSV file to the actual length pretty well.
+        # 1000 cuts down a TSV file to the actual length pretty well.
+        return self.total_size_bytes // 1000
 
 
 class FastPairedVoiceDebugger:
@@ -257,7 +276,8 @@ class FastPairedVoiceDebugger:
         if isinstance(state, dict):
             self.total_items = opt_get(state, ['total_items'], 0)
             self.loaded_items = opt_get(state, ['loaded_items'], 0)
-            self.self_conditioning_items = opt_get(state, ['self_conditioning_items'], 0)
+            self.self_conditioning_items = opt_get(
+                state, ['self_conditioning_items'], 0)
 
     def update(self, batch):
         self.total_items += batch['wav'].shape[0]
@@ -266,7 +286,8 @@ class FastPairedVoiceDebugger:
         for filename in batch['filenames']:
             self.unique_files.add(hashlib.sha256(filename.encode('utf-8')))
         if 'conditioning' in batch.keys():
-            self.self_conditioning_items += batch['conditioning_contains_self'].sum().item()
+            self.self_conditioning_items += batch['conditioning_contains_self'].sum(
+            ).item()
 
     def get_debugging_map(self):
         return {
@@ -284,7 +305,7 @@ if __name__ == '__main__':
         'mode': 'fast_paired_voice_audio_with_phonemes',
         'path': ['y:/libritts/train-clean-100/transcribed-oco.tsv',],
         'phoneme_paths': ['y:/libritts/train-other-500/transcribed-phoneme-oco.tsv'],
-        'types': [0,0],
+        'types': [0, 0],
         'normal_text_end_token': 256,
         'phase': 'train',
         'n_workers': 0,
@@ -299,11 +320,12 @@ if __name__ == '__main__':
         'load_aligned_codes': False,
         'debug_loading_failures': True,
     }
-    from data import create_dataset, create_dataloader
+    from data import create_dataloader, create_dataset
 
     def save(b, i, ib, key, c=None):
         if c is not None:
-            torchaudio.save(f'{i}_clip_{ib}_{key}_{c}.wav', b[key][ib][c], 22050)
+            torchaudio.save(f'{i}_clip_{ib}_{key}_{c}.wav',
+                            b[key][ib][c], 22050)
         else:
             torchaudio.save(f'{i}_clip_{ib}_{key}.wav', b[key][ib], 22050)
 
@@ -314,14 +336,13 @@ if __name__ == '__main__':
     max_pads, max_repeats = 0, 0
     for i, b in tqdm(enumerate(dl)):
         for ib in range(batch_sz):
-            #max_pads = max(max_pads, b['ctc_pads'].max())
-            #max_repeats = max(max_repeats, b['ctc_repeats'].max())
+            # max_pads = max(max_pads, b['ctc_pads'].max())
+            # max_repeats = max(max_repeats, b['ctc_repeats'].max())
             print(f'{i} {ib} {b["real_text"][ib]}')
-            #save(b, i, ib, 'wav')
-            #save(b, i, ib, 'conditioning', 0)
-            #save(b, i, ib, 'conditioning', 1)
+            # save(b, i, ib, 'wav')
+            # save(b, i, ib, 'conditioning', 0)
+            # save(b, i, ib, 'conditioning', 1)
             pass
         if i > 15:
             break
     print(max_pads, max_repeats)
-

@@ -1,7 +1,7 @@
-import torch
-import numpy as np
-from scipy.signal import get_window
 import librosa.util as librosa_util
+import numpy as np
+import torch
+from scipy.signal import get_window
 
 
 def window_sumsquare(window, n_frames, hop_length=200, win_length=800,
@@ -52,7 +52,8 @@ def window_sumsquare(window, n_frames, hop_length=200, win_length=800,
     # Fill the envelope
     for i in range(n_frames):
         sample = i * hop_length
-        x[sample:min(n, sample + n_fft)] += win_sq[:max(0, min(n_fft, n - sample))]
+        x[sample:min(n, sample + n_fft)
+          ] += win_sq[:max(0, min(n_fft, n - sample))]
     return x
 
 

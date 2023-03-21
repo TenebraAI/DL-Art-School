@@ -7,14 +7,15 @@ import torchaudio
 from munch import munchify
 from tqdm import tqdm
 
-from data.audio.unsupervised_audio_dataset import UnsupervisedAudioDataset
-from data.text.hf_datasets_wrapper import HfDataset
-from utils.util import opt_get
+from dlas.data.audio.unsupervised_audio_dataset import UnsupervisedAudioDataset
+from dlas.data.text.hf_datasets_wrapper import HfDataset
+from dlas.utils.util import opt_get
 
 
 def build_paired_voice_dataset(args):
-    from data.audio.paired_voice_audio_dataset import TextWavLoader as D
     from models.audio.tts.tacotron2 import create_hparams
+
+    from dlas.data.audio.paired_voice_audio_dataset import TextWavLoader as D
     default_params = create_hparams()
     default_params.update(args)
     dataset_opt = munchify(default_params)
@@ -33,6 +34,7 @@ class GrandConjoinedDataset(torch.utils.data.Dataset):
 
     Performs tokenization at this level, ignoring any tokenization performed by upstream datasets.
     """
+
     def __init__(self, opt):
         sample_rate = 22050  # Fixed.
         paired_dataset_args = opt['paired_dataset_args']
@@ -47,7 +49,8 @@ class GrandConjoinedDataset(torch.utils.data.Dataset):
         self.max_solo_text_length = opt['max_solo_text_length']
         self.collate = opt_get(opt, ['needs_collate'], False)
         self.sample_rate = sample_rate
-        self.num_conditioning_candidates = opt_get(opt, ['num_conditioning_candidates'], 0)
+        self.num_conditioning_candidates = opt_get(
+            opt, ['num_conditioning_candidates'], 0)
         self.conditioning_length = opt_get(opt, ['conditioning_length'], 44000)
         load_conditioning = self.num_conditioning_candidates > 0
 
@@ -75,7 +78,8 @@ class GrandConjoinedDataset(torch.utils.data.Dataset):
     def fetch_text_at(self, i):
         try:
             txt = self.text[i % len(self.text)]['text']
-            assert '*' not in txt  # This is a hack to get around the use of '*' to mask expletives in some text-only datasets. There really isn't a linguistic use for this character anyways.
+            # This is a hack to get around the use of '*' to mask expletives in some text-only datasets. There really isn't a linguistic use for this character anyways.
+            assert '*' not in txt
             tok = self.speech_and_text.get_text(txt)
             padding_required = self.max_solo_text_length - tok.shape[0]
             if padding_required < 0:
@@ -137,7 +141,8 @@ class GrandConjoinedDataset(torch.utils.data.Dataset):
             sp = self.speech[i % len(self.speech)]
             # Set upper bound on solo speech lengths. This is handled automatically when collation is turned off, but needs to be done otherwise.
             sp['clip'] = sp['clip'][:, :self.max_solo_audio_length]
-            sp['clip_lengths'] = sp['clip_lengths'].clamp(0, self.max_solo_audio_length)
+            sp['clip_lengths'] = sp['clip_lengths'].clamp(
+                0, self.max_solo_audio_length)
             return self.optionally_add_conditioning_candidates({
                 'paired_audio': snt['wav'],
                 'paired_audio_lengths': snt['wav_lengths'],
@@ -205,7 +210,7 @@ if __name__ == '__main__':
             'use_bpe_tokenizer': False,
         },
     }
-    from data import create_dataset, create_dataloader
+    from data import create_dataloader, create_dataset
     os.remove('test_cache_delete_me2.pth')
 
     ds, c = create_dataset(train_params, return_collate=True)
@@ -213,7 +218,8 @@ if __name__ == '__main__':
 
     def save(b, i, ib, key, c=None):
         if c is not None:
-            torchaudio.save(f'{i}_clip_{ib}_{key}_{c}.wav', b[key][ib][c], 22050)
+            torchaudio.save(f'{i}_clip_{ib}_{key}_{c}.wav',
+                            b[key][ib][c], 22050)
         else:
             torchaudio.save(f'{i}_clip_{ib}_{key}.wav', b[key][ib], 22050)
 
@@ -224,16 +230,17 @@ if __name__ == '__main__':
     m = None
     for i, b in tqdm(enumerate(dl)):
         for ib in range(batch_sz):
-            #save(b, i, ib, 'paired_audio')
-            #save(b, i, ib, 'paired_audio_conditioning', 0)
-            #save(b, i, ib, 'paired_audio_conditioning', 1)
-            print(f'Paired file: {b["paired_file"][ib]} text: {b["paired_text"][ib]}')
-            print(f'Paired text decoded: {decode(b, ib, "paired_text_tokens")}')
-            #save(b, i, ib, 'speech_audio')
-            #save(b, i, ib, 'speech_audio_conditioning', 0)
-            #save(b, i, ib, 'speech_audio_conditioning', 1)
-            #print(f'Text: {b["text_text"][ib]}')
-            #print(f'Text decoded: {decode(b, ib, "text_tokens")}')
+            # save(b, i, ib, 'paired_audio')
+            # save(b, i, ib, 'paired_audio_conditioning', 0)
+            # save(b, i, ib, 'paired_audio_conditioning', 1)
+            print(
+                f'Paired file: {b["paired_file"][ib]} text: {b["paired_text"][ib]}')
+            print(
+                f'Paired text decoded: {decode(b, ib, "paired_text_tokens")}')
+            # save(b, i, ib, 'speech_audio')
+            # save(b, i, ib, 'speech_audio_conditioning', 0)
+            # save(b, i, ib, 'speech_audio_conditioning', 1)
+            # print(f'Text: {b["text_text"][ib]}')
+            # print(f'Text decoded: {decode(b, ib, "text_tokens")}')
         if i > 5:
             break
-

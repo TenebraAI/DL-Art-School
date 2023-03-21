@@ -1,17 +1,15 @@
 import functools
-import math
 from math import sqrt
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from torch import einsum
 from vector_quantize_pytorch import VectorQuantize
 
-from models.vqvae.vqvae import Quantize
-from trainer.networks import register_model
-from utils.util import opt_get
+from dlas.models.vqvae.vqvae import Quantize
+from dlas.trainer.networks import register_model
+from dlas.utils.util import opt_get
 
 
 def default(val, d):
@@ -32,9 +30,9 @@ class ResBlock(nn.Module):
     def __init__(self, chan, conv, activation):
         super().__init__()
         self.net = nn.Sequential(
-            conv(chan, chan, 3, padding = 1),
+            conv(chan, chan, 3, padding=1),
             activation(),
-            conv(chan, chan, 3, padding = 1),
+            conv(chan, chan, 3, padding=1),
             activation(),
             conv(chan, chan, 1)
         )
@@ -52,7 +50,8 @@ class UpsampledConv(nn.Module):
         self.conv = conv(*args, **kwargs)
 
     def forward(self, x):
-        up = nn.functional.interpolate(x, scale_factor=self.stride, mode='nearest')
+        up = nn.functional.interpolate(
+            x, scale_factor=self.stride, mode='nearest')
         return self.conv(up)
 
 
@@ -60,23 +59,23 @@ class DiscreteVAE(nn.Module):
     def __init__(
         self,
         positional_dims=2,
-        num_tokens = 512,
-        codebook_dim = 512,
-        num_layers = 3,
-        num_resnet_blocks = 0,
-        hidden_dim = 64,
-        channels = 3,
-        stride = 2,
-        kernel_size = 4,
-        use_transposed_convs = True,
-        encoder_norm = False,
-        activation = 'relu',
-        smooth_l1_loss = False,
-        straight_through = False,
-        normalization = None, # ((0.5,) * 3, (0.5,) * 3),
-        record_codes = False,
-        use_lr_quantizer = False,
-        lr_quantizer_args = {},
+        num_tokens=512,
+        codebook_dim=512,
+        num_layers=3,
+        num_resnet_blocks=0,
+        hidden_dim=64,
+        channels=3,
+        stride=2,
+        kernel_size=4,
+        use_transposed_convs=True,
+        encoder_norm=False,
+        activation='relu',
+        smooth_l1_loss=False,
+        straight_through=False,
+        normalization=None,  # ((0.5,) * 3, (0.5,) * 3),
+        record_codes=False,
+        use_lr_quantizer=False,
+        lr_quantizer_args={},
     ):
         super().__init__()
         has_resblocks = num_resnet_blocks > 0
@@ -86,7 +85,8 @@ class DiscreteVAE(nn.Module):
         self.straight_through = straight_through
         self.positional_dims = positional_dims
 
-        assert positional_dims > 0 and positional_dims < 3  # This VAE only supports 1d and 2d inputs for now.
+        # This VAE only supports 1d and 2d inputs for now.
+        assert positional_dims > 0 and positional_dims < 3
         if positional_dims == 2:
             conv = nn.Conv2d
             conv_transpose = nn.ConvTranspose2d
@@ -103,7 +103,6 @@ class DiscreteVAE(nn.Module):
         else:
             assert NotImplementedError()
 
-
         enc_layers = []
         dec_layers = []
 
@@ -116,18 +115,22 @@ class DiscreteVAE(nn.Module):
             dec_init_chan = codebook_dim if not has_resblocks else dec_chans[0]
             dec_chans = [dec_init_chan, *dec_chans]
 
-            enc_chans_io, dec_chans_io = map(lambda t: list(zip(t[:-1], t[1:])), (enc_chans, dec_chans))
+            enc_chans_io, dec_chans_io = map(lambda t: list(
+                zip(t[:-1], t[1:])), (enc_chans, dec_chans))
 
             pad = (kernel_size - 1) // 2
             for (enc_in, enc_out), (dec_in, dec_out) in zip(enc_chans_io, dec_chans_io):
-                enc_layers.append(nn.Sequential(conv(enc_in, enc_out, kernel_size, stride = stride, padding = pad), act()))
+                enc_layers.append(nn.Sequential(
+                    conv(enc_in, enc_out, kernel_size, stride=stride, padding=pad), act()))
                 if encoder_norm:
                     enc_layers.append(nn.GroupNorm(8, enc_out))
-                dec_layers.append(nn.Sequential(conv_transpose(dec_in, dec_out, kernel_size, stride = stride, padding = pad), act()))
+                dec_layers.append(nn.Sequential(conv_transpose(
+                    dec_in, dec_out, kernel_size, stride=stride, padding=pad), act()))
             dec_out_chans = dec_chans[-1]
             innermost_dim = dec_chans[0]
         else:
-            enc_layers.append(nn.Sequential(conv(channels, hidden_dim, 1), act()))
+            enc_layers.append(nn.Sequential(
+                conv(channels, hidden_dim, 1), act()))
             dec_out_chans = hidden_dim
             innermost_dim = hidden_dim
 
@@ -138,7 +141,6 @@ class DiscreteVAE(nn.Module):
         if num_resnet_blocks > 0:
             dec_layers.insert(0, conv(codebook_dim, innermost_dim, 1))
 
-
         enc_layers.append(conv(innermost_dim, codebook_dim, 1))
         dec_layers.append(conv(dec_out_chans, channels, 1))
 
@@ -148,9 +150,11 @@ class DiscreteVAE(nn.Module):
         self.loss_fn = F.smooth_l1_loss if smooth_l1_loss else F.mse_loss
 
         if use_lr_quantizer:
-            self.codebook = VectorQuantize(dim=codebook_dim, codebook_size=num_tokens, **lr_quantizer_args)
+            self.codebook = VectorQuantize(
+                dim=codebook_dim, codebook_size=num_tokens, **lr_quantizer_args)
         else:
-            self.codebook = Quantize(codebook_dim, num_tokens, new_return_order=True)
+            self.codebook = Quantize(
+                codebook_dim, num_tokens, new_return_order=True)
 
         # take care of normalization within class
         self.normalization = normalization
@@ -165,7 +169,8 @@ class DiscreteVAE(nn.Module):
         if not self.normalization is not None:
             return images
 
-        means, stds = map(lambda t: torch.as_tensor(t).to(images), self.normalization)
+        means, stds = map(lambda t: torch.as_tensor(
+            t).to(images), self.normalization)
         arrange = 'c -> () c () ()' if self.positional_dims == 2 else 'c -> () c ()'
         means, stds = map(lambda t: rearrange(t, arrange), (means, stds))
         images = images.clone()
@@ -183,7 +188,8 @@ class DiscreteVAE(nn.Module):
     @eval_decorator
     def get_codebook_indices(self, images):
         img = self.norm(images)
-        logits = self.encoder(img).permute((0,2,3,1) if len(img.shape) == 4 else (0,2,1))
+        logits = self.encoder(img).permute(
+            (0, 2, 3, 1) if len(img.shape) == 4 else (0, 2, 1))
         sampled, codes, _ = self.codebook(logits)
         self.log_codes(codes)
         return codes
@@ -214,7 +220,8 @@ class DiscreteVAE(nn.Module):
 
     def infer(self, img):
         img = self.norm(img)
-        logits = self.encoder(img).permute((0,2,3,1) if len(img.shape) == 4 else (0,2,1))
+        logits = self.encoder(img).permute(
+            (0, 2, 3, 1) if len(img.shape) == 4 else (0, 2, 1))
         sampled, codes, commitment_loss = self.codebook(logits)
         return self.decode(codes)
 
@@ -226,9 +233,11 @@ class DiscreteVAE(nn.Module):
         img
     ):
         img = self.norm(img)
-        logits = self.encoder(img).permute((0,2,3,1) if len(img.shape) == 4 else (0,2,1))
+        logits = self.encoder(img).permute(
+            (0, 2, 3, 1) if len(img.shape) == 4 else (0, 2, 1))
         sampled, codes, commitment_loss = self.codebook(logits)
-        sampled = sampled.permute((0,3,1,2) if len(img.shape) == 4 else (0,2,1))
+        sampled = sampled.permute(
+            (0, 3, 1, 2) if len(img.shape) == 4 else (0, 2, 1))
 
         if self.training:
             out = sampled
@@ -249,7 +258,8 @@ class DiscreteVAE(nn.Module):
         if self.record_codes and self.internal_step % 10 == 0:
             codes = codes.flatten()
             l = codes.shape[0]
-            i = self.code_ind if (self.codes.shape[0] - self.code_ind) > l else self.codes.shape[0] - l
+            i = self.code_ind if (
+                self.codes.shape[0] - self.code_ind) > l else self.codes.shape[0] - l
             self.codes[i:i+l] = codes.cpu()
             self.code_ind = self.code_ind + l
             if self.code_ind >= self.codes.shape[0]:
@@ -264,14 +274,14 @@ def register_lucidrains_dvae(opt_net, opt):
 
 
 if __name__ == '__main__':
-    #v = DiscreteVAE()
-    #o=v(torch.randn(1,3,256,256))
-    #print(o.shape)
+    # v = DiscreteVAE()
+    # o=v(torch.randn(1,3,256,256))
+    # print(o.shape)
     v = DiscreteVAE(channels=80, normalization=None, positional_dims=1, num_tokens=8192, codebook_dim=2048,
                     hidden_dim=512, num_resnet_blocks=3, kernel_size=3, num_layers=1, use_transposed_convs=False,
                     use_lr_quantizer=True)
-    #v.load_state_dict(torch.load('../experiments/clips_dvae_8192_rev2.pth'))
-    #v.eval()
-    r,l,o=v(torch.randn(1,80,256))
-    v.decode(torch.randint(0,8192,(1,256)))
+    # v.load_state_dict(torch.load('../experiments/clips_dvae_8192_rev2.pth'))
+    # v.eval()
+    r, l, o = v(torch.randn(1, 80, 256))
+    v.decode(torch.randint(0, 8192, (1, 256)))
     print(o.shape, l.shape)

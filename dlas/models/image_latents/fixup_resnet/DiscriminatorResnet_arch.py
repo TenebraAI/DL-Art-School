@@ -1,10 +1,11 @@
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-import torch_intermediary as ml
 
+import dlas.torch_intermediary as ml
 
-__all__ = ['FixupResNet', 'fixup_resnet18', 'fixup_resnet34', 'fixup_resnet50', 'fixup_resnet101', 'fixup_resnet152']
+__all__ = ['FixupResNet', 'fixup_resnet18', 'fixup_resnet34',
+           'fixup_resnet50', 'fixup_resnet101', 'fixup_resnet152']
 
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -51,6 +52,7 @@ class FixupBasicBlock(nn.Module):
         out = self.lrelu(out)
 
         return out
+
 
 class FixupBottleneck(nn.Module):
     expansion = 4
@@ -104,26 +106,35 @@ class FixupResNet(nn.Module):
         self.bias1 = nn.Parameter(torch.zeros(1))
         self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
         self.layer1 = self._make_layer(block, num_filters, layers[0], stride=2)
-        self.layer2 = self._make_layer(block, num_filters*2, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, num_filters*4, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, num_filters*8, layers[3], stride=2)
+        self.layer2 = self._make_layer(
+            block, num_filters*2, layers[1], stride=2)
+        self.layer3 = self._make_layer(
+            block, num_filters*4, layers[2], stride=2)
+        self.layer4 = self._make_layer(
+            block, num_filters*8, layers[3], stride=2)
         self.bias2 = nn.Parameter(torch.zeros(1))
         reduced_img_sz = int(input_img_size / 32)
-        self.fc1 = ml.Linear(num_filters * 8 * reduced_img_sz * reduced_img_sz, 100)
+        self.fc1 = ml.Linear(
+            num_filters * 8 * reduced_img_sz * reduced_img_sz, 100)
         self.fc2 = ml.Linear(100, num_classes)
 
         for m in self.modules():
             if isinstance(m, FixupBasicBlock):
-                nn.init.normal_(m.conv1.weight, mean=0, std=np.sqrt(2 / (m.conv1.weight.shape[0] * np.prod(m.conv1.weight.shape[2:]))) * self.num_layers ** (-0.5))
+                nn.init.normal_(m.conv1.weight, mean=0, std=np.sqrt(
+                    2 / (m.conv1.weight.shape[0] * np.prod(m.conv1.weight.shape[2:]))) * self.num_layers ** (-0.5))
                 nn.init.constant_(m.conv2.weight, 0)
                 if m.downsample is not None:
-                    nn.init.normal_(m.downsample.weight, mean=0, std=np.sqrt(2 / (m.downsample.weight.shape[0] * np.prod(m.downsample.weight.shape[2:]))))
+                    nn.init.normal_(m.downsample.weight, mean=0, std=np.sqrt(
+                        2 / (m.downsample.weight.shape[0] * np.prod(m.downsample.weight.shape[2:]))))
             elif isinstance(m, FixupBottleneck):
-                nn.init.normal_(m.conv1.weight, mean=0, std=np.sqrt(2 / (m.conv1.weight.shape[0] * np.prod(m.conv1.weight.shape[2:]))) * self.num_layers ** (-0.25))
-                nn.init.normal_(m.conv2.weight, mean=0, std=np.sqrt(2 / (m.conv2.weight.shape[0] * np.prod(m.conv2.weight.shape[2:]))) * self.num_layers ** (-0.25))
+                nn.init.normal_(m.conv1.weight, mean=0, std=np.sqrt(
+                    2 / (m.conv1.weight.shape[0] * np.prod(m.conv1.weight.shape[2:]))) * self.num_layers ** (-0.25))
+                nn.init.normal_(m.conv2.weight, mean=0, std=np.sqrt(
+                    2 / (m.conv2.weight.shape[0] * np.prod(m.conv2.weight.shape[2:]))) * self.num_layers ** (-0.25))
                 nn.init.constant_(m.conv3.weight, 0)
                 if m.downsample is not None:
-                    nn.init.normal_(m.downsample.weight, mean=0, std=np.sqrt(2 / (m.downsample.weight.shape[0] * np.prod(m.downsample.weight.shape[2:]))))
+                    nn.init.normal_(m.downsample.weight, mean=0, std=np.sqrt(
+                        2 / (m.downsample.weight.shape[0] * np.prod(m.downsample.weight.shape[2:]))))
             '''
             elif isinstance(m, ml.Linear):
                 nn.init.constant_(m.weight, 0)
@@ -132,7 +143,8 @@ class FixupResNet(nn.Module):
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
-            downsample = conv1x1(self.inplanes, planes * block.expansion, stride)
+            downsample = conv1x1(self.inplanes, planes *
+                                 block.expansion, stride)
 
         layers = []
         layers.append(block(self.inplanes, planes, stride, downsample))
@@ -193,4 +205,5 @@ def fixup_resnet152(**kwargs):
     return model
 
 
-__all__ = ['FixupResNet', 'fixup_resnet18', 'fixup_resnet34', 'fixup_resnet50', 'fixup_resnet101', 'fixup_resnet152']
+__all__ = ['FixupResNet', 'fixup_resnet18', 'fixup_resnet34',
+           'fixup_resnet50', 'fixup_resnet101', 'fixup_resnet152']

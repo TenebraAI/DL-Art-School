@@ -1,20 +1,19 @@
-import os.path as osp
-import logging
-import random
 import argparse
+import logging
+import os.path as osp
+import random
 
-import torchvision
-
-import utils
-import utils.options as option
-import utils.util as util
-from models.audio.vocoders.waveglow import Denoiser
-from trainer.ExtensibleTrainer import ExtensibleTrainer
-from data import create_dataset, create_dataloader
-from tqdm import tqdm
-import torch
 import numpy as np
+import torch
+import torchvision
 from scipy.io import wavfile
+from tqdm import tqdm
+
+import dlas.utils.options as option
+import dlas.utils.util as util
+from dlas.data import create_dataloader, create_dataset
+from dlas.models.audio.vocoders.waveglow import Denoiser
+from dlas.trainer.ExtensibleTrainer import ExtensibleTrainer
 
 
 def forward_pass(model, denoiser, data, output_dir, opt, b):
@@ -26,22 +25,29 @@ def forward_pass(model, denoiser, data, output_dir, opt, b):
     pred_waveforms = denoiser(pred_waveforms)
     gt = 'ground_truth' in opt['eval'].keys()
     if gt:
-        ground_truth_waveforms = model.eval_state[opt['eval']['ground_truth']][0]
+        ground_truth_waveforms = model.eval_state[opt['eval']
+                                                  ['ground_truth']][0]
         ground_truth_waveforms = denoiser(ground_truth_waveforms)
     for i in range(pred_waveforms.shape[0]):
         # Output predicted mels and waveforms.
         pred_mel = model.eval_state[opt['eval']['pred_mel']][0][i].unsqueeze(0)
-        pred_mel = ((pred_mel - pred_mel.mean()) / max(abs(pred_mel.min()), pred_mel.max())).unsqueeze(1)
-        torchvision.utils.save_image(pred_mel, osp.join(output_dir, f'{b}_{i}_pred_mel.png'))
+        pred_mel = ((pred_mel - pred_mel.mean()) /
+                    max(abs(pred_mel.min()), pred_mel.max())).unsqueeze(1)
+        torchvision.utils.save_image(pred_mel, osp.join(
+            output_dir, f'{b}_{i}_pred_mel.png'))
         audio = pred_waveforms[i][0].cpu().numpy()
         wavfile.write(osp.join(output_dir, f'{b}_{i}.wav'), 22050, audio)
 
         if gt:
-            gt_mel = model.eval_state[opt['eval']['ground_truth_mel']][0][i].unsqueeze(0)
-            gt_mel = ((gt_mel - gt_mel.mean()) / max(abs(gt_mel.min()), gt_mel.max())).unsqueeze(1)
-            torchvision.utils.save_image(gt_mel, osp.join(output_dir, f'{b}_{i}_gt_mel.png'))
+            gt_mel = model.eval_state[opt['eval']
+                                      ['ground_truth_mel']][0][i].unsqueeze(0)
+            gt_mel = ((gt_mel - gt_mel.mean()) /
+                      max(abs(gt_mel.min()), gt_mel.max())).unsqueeze(1)
+            torchvision.utils.save_image(
+                gt_mel, osp.join(output_dir, f'{b}_{i}_gt_mel.png'))
             audio = ground_truth_waveforms[i][0].cpu().numpy()
-            wavfile.write(osp.join(output_dir, f'{b}_{i}_ground_truth.wav'), 22050, audio)
+            wavfile.write(
+                osp.join(output_dir, f'{b}_{i}_ground_truth.wav'), 22050, audio)
 
 
 if __name__ == "__main__":
@@ -50,11 +56,12 @@ if __name__ == "__main__":
     random.seed(5555)
     np.random.seed(5555)
 
-    #### options
+    # options
     torch.backends.cudnn.benchmark = True
     want_metrics = False
     parser = argparse.ArgumentParser()
-    parser.add_argument('-opt', type=str, help='Path to options YAML file.', default='../options/test_lrdvae_audio_clips.yml')
+    parser.add_argument('-opt', type=str, help='Path to options YAML file.',
+                        default='../options/test_lrdvae_audio_clips.yml')
     opt = option.parse(parser.parse_args().opt, is_train=False)
     opt = option.dict_to_nonedict(opt)
     utils.util.loaded_options = opt
@@ -70,13 +77,16 @@ if __name__ == "__main__":
     test_loaders = []
     for phase, dataset_opt in sorted(opt['datasets'].items()):
         test_set, collate_fn = create_dataset(dataset_opt, return_collate=True)
-        test_loader = create_dataloader(test_set, dataset_opt, collate_fn=collate_fn)
-        logger.info('Number of test texts in [{:s}]: {:d}'.format(dataset_opt['name'], len(test_set)))
+        test_loader = create_dataloader(
+            test_set, dataset_opt, collate_fn=collate_fn)
+        logger.info('Number of test texts in [{:s}]: {:d}'.format(
+            dataset_opt['name'], len(test_set)))
         test_loaders.append(test_loader)
 
     model = ExtensibleTrainer(opt)
 
-    denoiser = Denoiser(model.networks['waveglow'].module)  # Pretty hacky, need to figure out a better way to integrate this.
+    # Pretty hacky, need to figure out a better way to integrate this.
+    denoiser = Denoiser(model.networks['waveglow'].module)
 
     batch = 0
     for test_loader in test_loaders:
@@ -87,4 +97,3 @@ if __name__ == "__main__":
         for data in tq:
             forward_pass(model, denoiser, data, dataset_dir, opt, batch)
             batch += 1
-

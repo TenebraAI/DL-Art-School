@@ -1,17 +1,23 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch_intermediary as ml
 
-from models.diffusion.nn import timestep_embedding, normalization, zero_module, conv_nd, linear
-from models.diffusion.unet_diffusion import TimestepEmbedSequential, TimestepBlock
-from models.lucidrains.x_transformers import Encoder, Attention, FeedForward, RMSScaleShiftNorm, RotaryEmbedding
-from trainer.networks import register_model
-from utils.util import checkpoint, print_network
+import dlas.torch_intermediary as ml
+from dlas.models.diffusion.nn import (conv_nd, linear, normalization,
+                                      timestep_embedding, zero_module)
+from dlas.models.diffusion.unet_diffusion import (TimestepBlock,
+                                                  TimestepEmbedSequential)
+from dlas.models.lucidrains.x_transformers import (Attention, Encoder,
+                                                   FeedForward,
+                                                   RMSScaleShiftNorm,
+                                                   RotaryEmbedding)
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint, print_network
 
 
 def is_latent(t):
     return t.dtype == torch.float
+
 
 def is_sequence(t):
     return t.dtype == torch.long
@@ -21,7 +27,8 @@ class MultiGroupEmbedding(nn.Module):
     def __init__(self, tokens, groups, dim):
         super().__init__()
         # nn.Embedding
-        self.m = nn.ModuleList([ml.Embedding(tokens, dim // groups) for _ in range(groups)])
+        self.m = nn.ModuleList(
+            [ml.Embedding(tokens, dim // groups) for _ in range(groups)])
 
     def forward(self, x):
         h = [embedding(x[:, :, i]) for i, embedding in enumerate(self.m)]
@@ -44,12 +51,14 @@ class DietAttentionBlock(TimestepBlock):
         self.rms_scale_norm = RMSScaleShiftNorm(in_dim)
         self.proj = ml.Linear(in_dim, dim)
         self.attn = Attention(dim, heads=heads, causal=False, dropout=dropout)
-        self.ff = FeedForward(dim, in_dim, mult=1, dropout=dropout, zero_init_output=True)
+        self.ff = FeedForward(dim, in_dim, mult=1,
+                              dropout=dropout, zero_init_output=True)
 
     def forward(self, x, timestep_emb, rotary_emb):
         h = self.rms_scale_norm(x, norm_scale_shift_inp=timestep_emb)
         h = self.proj(h)
-        h, _, _, _ = checkpoint(self.attn, h, None, None, None, None, None, rotary_emb)
+        h, _, _, _ = checkpoint(self.attn, h, None, None,
+                                None, None, None, rotary_emb)
         h = checkpoint(self.ff, h)
         return h + x
 
@@ -58,6 +67,7 @@ class TransformerDiffusionTTS(nn.Module):
     """
     A diffusion model composed entirely of stacks of transformer layers. Why would you do it any other way?
     """
+
     def __init__(
             self,
             prenet_channels=256,
@@ -75,7 +85,8 @@ class TransformerDiffusionTTS(nn.Module):
             dropout=0,
             use_fp16=False,
             # Parameters for regularization.
-            unconditioned_percentage=.1,  # This implements a mechanism similar to what is used in classifier-free training.
+            # This implements a mechanism similar to what is used in classifier-free training.
+            unconditioned_percentage=.1,
     ):
         super().__init__()
 
@@ -96,17 +107,17 @@ class TransformerDiffusionTTS(nn.Module):
         )
         prenet_heads = prenet_channels//64
         self.conditioning_embedder = nn.Sequential(nn.Conv1d(in_channels, prenet_channels // 2, 3, padding=1, stride=2),
-                                                   nn.Conv1d(prenet_channels//2, prenet_channels,3,padding=1,stride=2))
+                                                   nn.Conv1d(prenet_channels//2, prenet_channels, 3, padding=1, stride=2))
         self.conditioning_encoder = Encoder(
-                    dim=prenet_channels,
-                    depth=4,
-                    heads=prenet_heads,
-                    ff_dropout=dropout,
-                    attn_dropout=dropout,
-                    use_rmsnorm=True,
-                    ff_glu=True,
-                    rotary_pos_emb=True,
-                )
+            dim=prenet_channels,
+            depth=4,
+            heads=prenet_heads,
+            ff_dropout=dropout,
+            attn_dropout=dropout,
+            use_rmsnorm=True,
+            ff_glu=True,
+            rotary_pos_emb=True,
+        )
         self.clvp_encoder = ml.Linear(clvp_in_dim, prenet_channels)
         # nn.Embedding
         self.type_embedding = ml.Embedding(types, prenet_channels)
@@ -119,45 +130,48 @@ class TransformerDiffusionTTS(nn.Module):
             # nn.Embedding
             self.embeddings = ml.Embedding(token_count, prenet_channels)
         else:
-            self.embeddings = MultiGroupEmbedding(token_count, in_groups, prenet_channels)
+            self.embeddings = MultiGroupEmbedding(
+                token_count, in_groups, prenet_channels)
         self.latent_conditioner = nn.Sequential(
             nn.Conv1d(in_latent_channels, prenet_channels, 3, padding=1),
             Encoder(
-                    dim=prenet_channels,
-                    depth=2,
-                    heads=prenet_heads,
-                    ff_dropout=dropout,
-                    attn_dropout=dropout,
-                    use_rmsnorm=True,
-                    ff_glu=True,
-                    rotary_pos_emb=True,
-                )
+                dim=prenet_channels,
+                depth=2,
+                heads=prenet_heads,
+                ff_dropout=dropout,
+                attn_dropout=dropout,
+                use_rmsnorm=True,
+                ff_glu=True,
+                rotary_pos_emb=True,
+            )
         )
-        self.latent_fade = nn.Parameter(torch.zeros(1,1,prenet_channels))
+        self.latent_fade = nn.Parameter(torch.zeros(1, 1, prenet_channels))
         self.code_converter = Encoder(
-                    dim=prenet_channels,
-                    depth=3,
-                    heads=prenet_heads,
-                    ff_dropout=dropout,
-                    attn_dropout=dropout,
-                    use_rmsnorm=True,
-                    ff_glu=True,
-                    rotary_pos_emb=True,
-                )
+            dim=prenet_channels,
+            depth=3,
+            heads=prenet_heads,
+            ff_dropout=dropout,
+            attn_dropout=dropout,
+            use_rmsnorm=True,
+            ff_glu=True,
+            rotary_pos_emb=True,
+        )
 
-        self.unconditioned_embedding = nn.Parameter(torch.randn(1,1,prenet_channels))
+        self.unconditioned_embedding = nn.Parameter(
+            torch.randn(1, 1, prenet_channels))
 
         self.rotary_embeddings = RotaryEmbedding(rotary_emb_dim)
         self.cond_intg = ml.Linear(prenet_channels*4, model_channels)
         self.intg = ml.Linear(prenet_channels*2, model_channels)
 
-        self.layers = TimestepRotaryEmbedSequential(*[DietAttentionBlock(model_channels, block_channels, block_channels // 64, dropout) for _ in range(num_layers)])
-
+        self.layers = TimestepRotaryEmbedSequential(
+            *[DietAttentionBlock(model_channels, block_channels, block_channels // 64, dropout) for _ in range(num_layers)])
 
         self.out = nn.Sequential(
             normalization(model_channels),
             nn.SiLU(),
-            zero_module(conv_nd(1, model_channels, out_channels, 3, padding=1)),
+            zero_module(conv_nd(1, model_channels,
+                        out_channels, 3, padding=1)),
         )
 
         self.debug_codes = {}
@@ -172,7 +186,8 @@ class TransformerDiffusionTTS(nn.Module):
         return groups
 
     def timestep_independent(self, codes, conditioning_input, expected_seq_len, prenet_latent=None):
-        cond_emb = self.conditioning_embedder(conditioning_input).permute(0,2,1)
+        cond_emb = self.conditioning_embedder(
+            conditioning_input).permute(0, 2, 1)
         cond_emb = self.conditioning_encoder(cond_emb)[:, 0]
 
         code_emb = self.embeddings(codes)
@@ -188,10 +203,10 @@ class TransformerDiffusionTTS(nn.Module):
                                    code_emb)
         code_emb = self.code_converter(code_emb)
 
-        expanded_code_emb = F.interpolate(code_emb.permute(0,2,1), size=expected_seq_len, mode='nearest').permute(0,2,1)
+        expanded_code_emb = F.interpolate(code_emb.permute(
+            0, 2, 1), size=expected_seq_len, mode='nearest').permute(0, 2, 1)
 
         return expanded_code_emb, cond_emb
-
 
     def forward(self, x, timesteps, codes=None, conditioning_input=None, clvp_input=None, type=None, prenet_latent=None, precomputed_code_embeddings=None,
                 precomputed_cond_embeddings=None, conditioning_free=False):
@@ -202,32 +217,38 @@ class TransformerDiffusionTTS(nn.Module):
 
         unused_params = []
         if conditioning_free:
-            code_emb = self.unconditioned_embedding.repeat(x.shape[0], 1, x.shape[-1])
-            unused_params.extend(list(self.code_converter.parameters()) + list(self.code_embedding.parameters()))
+            code_emb = self.unconditioned_embedding.repeat(
+                x.shape[0], 1, x.shape[-1])
+            unused_params.extend(
+                list(self.code_converter.parameters()) + list(self.code_embedding.parameters()))
             unused_params.extend(list(self.latent_conditioner.parameters()))
         else:
             if precomputed_code_embeddings is not None:
                 code_emb = precomputed_code_embeddings
                 cond_emb = precomputed_cond_embeddings
             else:
-                code_emb, cond_emb = self.timestep_independent(codes, conditioning_input, x.shape[-1], prenet_latent)
+                code_emb, cond_emb = self.timestep_independent(
+                    codes, conditioning_input, x.shape[-1], prenet_latent)
                 if prenet_latent is None:
-                    unused_params.extend(list(self.latent_conditioner.parameters()) + [self.latent_fade])
+                    unused_params.extend(
+                        list(self.latent_conditioner.parameters()) + [self.latent_fade])
             unused_params.append(self.unconditioned_embedding)
 
-        clvp_emb = torch.zeros_like(cond_emb) if clvp_input is None else self.clvp_encoder(clvp_input)
+        clvp_emb = torch.zeros_like(
+            cond_emb) if clvp_input is None else self.clvp_encoder(clvp_input)
         type_emb = self.type_embedding(type)
         if clvp_input is None:
             unused_params.extend(self.clvp_encoder.parameters())
-        blk_emb = torch.cat([self.time_embed(timestep_embedding(timesteps, self.prenet_channels)), cond_emb, clvp_emb, type_emb], dim=-1)
+        blk_emb = torch.cat([self.time_embed(timestep_embedding(
+            timesteps, self.prenet_channels)), cond_emb, clvp_emb, type_emb], dim=-1)
         blk_emb = self.cond_intg(blk_emb)
-        x = self.inp_block(x).permute(0,2,1)
+        x = self.inp_block(x).permute(0, 2, 1)
 
         rotary_pos_emb = self.rotary_embeddings(x.shape[1], x.device)
         x = self.intg(torch.cat([x, code_emb], dim=-1))
         x = self.layers(x, blk_emb, rotary_pos_emb)
 
-        x = x.float().permute(0,2,1)
+        x = x.float().permute(0, 2, 1)
         out = self.out(x)
 
         # Involve probabilistic or possibly unused parameters in loss so we don't get DDP errors.
@@ -246,15 +267,15 @@ def register_transformer_diffusion_tts2(opt_net, opt):
 
 if __name__ == '__main__':
     clip = torch.randn(2, 256, 400)
-    aligned_latent = torch.randn(2,100,512)
-    aligned_sequence = torch.randint(0,8,(2,100,8))
+    aligned_latent = torch.randn(2, 100, 512)
+    aligned_sequence = torch.randint(0, 8, (2, 100, 8))
     cond = torch.randn(2, 256, 400)
     ts = torch.LongTensor([600, 600])
-    clvp = torch.randn(2,768)
-    type = torch.LongTensor([0,1])
-    model = TransformerDiffusionTTS(model_channels=3072, num_layers=16, unconditioned_percentage=.5, in_groups=8, prenet_channels=1024, block_channels=1024)
+    clvp = torch.randn(2, 768)
+    type = torch.LongTensor([0, 1])
+    model = TransformerDiffusionTTS(model_channels=3072, num_layers=16,
+                                    unconditioned_percentage=.5, in_groups=8, prenet_channels=1024, block_channels=1024)
     print_network(model)
     o = model(clip, ts, aligned_sequence, cond, clvp_input=clvp, type=type)
     torch.save(model.state_dict(), 'test.pth')
-    #o = model(clip, ts, aligned_sequence, cond, aligned_latent)
-
+    # o = model(clip, ts, aligned_sequence, cond, aligned_latent)

@@ -5,7 +5,8 @@ from spleeter.separator import Separator
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from scripts.audio.preparation.spleeter_utils.spleeter_dataset import SpleeterDataset
+from dlas.scripts.audio.preparation.spleeter_utils.spleeter_dataset import \
+    SpleeterDataset
 
 
 def main():
@@ -19,7 +20,7 @@ def main():
 
     src_dir = args.path
     out_file = args.out
-    output_sample_rate=22050
+    output_sample_rate = 22050
     resume_file = args.resume
 
     loader = DataLoader(SpleeterDataset(src_dir, batch_sz=16, sample_rate=output_sample_rate,

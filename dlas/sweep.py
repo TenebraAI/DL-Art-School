@@ -1,3 +1,4 @@
+import collections.abc
 import copy
 import functools
 import os
@@ -5,9 +6,8 @@ from multiprocessing.pool import ThreadPool
 
 import torch
 
-from train import Trainer
-from utils import options as option
-import collections.abc
+from dlas.train import Trainer
+from dlas.utils import options as option
 
 
 def deep_update(d, u):
@@ -55,7 +55,7 @@ if __name__ == '__main__':
                 nd['path'][k] = p.replace(base_path, f'{base_path}/{mod}')
         all_opts.append(nd)
 
-    for i in range(1,len(modifications)):
+    for i in range(1, len(modifications)):
         pid = os.fork()
         if pid == 0:
             rank = i

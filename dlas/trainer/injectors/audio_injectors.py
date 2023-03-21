@@ -4,31 +4,37 @@ import torch
 import torch.nn.functional as F
 import torchaudio
 
-from models.audio.music.cheater_gen_ar import ConditioningAR
-from trainer.inject import Injector
-from utils.music_utils import get_music_codegen
-from utils.util import opt_get, load_model_from_config, pad_or_truncate
+from dlas.models.audio.music.cheater_gen_ar import ConditioningAR
+from dlas.trainer.inject import Injector
+from dlas.utils.music_utils import get_music_codegen
+from dlas.utils.util import load_model_from_config, opt_get, pad_or_truncate
 
 MEL_MIN = -11.512925148010254
 TACOTRON_MEL_MAX = 2.3143386840820312
 TORCH_MEL_MAX = 4.82  # FYI: this STILL isn't assertive enough...
 
+
 def normalize_torch_mel(mel):
     return 2 * ((mel - MEL_MIN) / (TORCH_MEL_MAX - MEL_MIN)) - 1
+
 
 def denormalize_torch_mel(norm_mel):
     return ((norm_mel+1)/2) * (TORCH_MEL_MAX - MEL_MIN) + MEL_MIN
 
+
 def normalize_mel(mel):
     return 2 * ((mel - MEL_MIN) / (TACOTRON_MEL_MAX - MEL_MIN)) - 1
 
+
 def denormalize_mel(norm_mel):
     return ((norm_mel+1)/2) * (TACOTRON_MEL_MAX - MEL_MIN) + MEL_MIN
+
 
 class MelSpectrogramInjector(Injector):
     def __init__(self, opt, env):
         super().__init__(opt, env)
         from models.audio.tts.tacotron2 import TacotronSTFT
+
         # These are the default tacotron values for the MEL spectrogram.
         filter_length = opt_get(opt, ['filter_length'], 1024)
         hop_length = opt_get(opt, ['hop_length'], 256)
@@ -37,8 +43,10 @@ class MelSpectrogramInjector(Injector):
         mel_fmin = opt_get(opt, ['mel_fmin'], 0)
         mel_fmax = opt_get(opt, ['mel_fmax'], 8000)
         sampling_rate = opt_get(opt, ['sampling_rate'], 22050)
-        self.stft = TacotronSTFT(filter_length, hop_length, win_length, n_mel_channels, sampling_rate, mel_fmin, mel_fmax)
-        self.do_normalization = opt_get(opt, ['do_normalization'], None)  # This is different from the TorchMelSpectrogramInjector. This just normalizes to the range [-1,1]
+        self.stft = TacotronSTFT(filter_length, hop_length, win_length,
+                                 n_mel_channels, sampling_rate, mel_fmin, mel_fmax)
+        # This is different from the TorchMelSpectrogramInjector. This just normalizes to the range [-1,1]
+        self.do_normalization = opt_get(opt, ['do_normalization'], None)
 
     def forward(self, state):
         inp = state[self.input]
@@ -79,7 +87,8 @@ class TorchMelSpectrogramInjector(Injector):
     def forward(self, state):
         with torch.no_grad():
             inp = state[self.input]
-            if len(inp.shape) == 3:  # Automatically squeeze out the channels dimension if it is present (assuming mono-audio)
+            # Automatically squeeze out the channels dimension if it is present (assuming mono-audio)
+            if len(inp.shape) == 3:
                 inp = inp.squeeze(1)
             assert len(inp.shape) == 2
             self.mel_stft = self.mel_stft.to(inp.device)
@@ -106,9 +115,8 @@ class RandomAudioCropInjector(Injector):
         self.lengths_key = opt['lengths_key']
         self.crop_start_key = opt['crop_start_key']
         self.min_buffer = opt_get(opt, ['min_buffer'], 0)
-        self.rand_buffer_ptr=9999
-        self.rand_buffer_sz=5000
-
+        self.rand_buffer_ptr = 9999
+        self.rand_buffer_sz = 5000
 
     def forward(self, state):
         inp = state[self.input]
@@ -116,7 +124,8 @@ class RandomAudioCropInjector(Injector):
             # All processes should agree, otherwise all processes wait to process max_crop_sz (effectively). But agreeing too often
             # is expensive, so agree on a "chunk" at a time.
             if self.rand_buffer_ptr >= self.rand_buffer_sz:
-                self.rand_buffer = torch.randint(self.min_crop_sz, self.max_crop_sz, (self.rand_buffer_sz,), dtype=torch.long, device=inp.device)
+                self.rand_buffer = torch.randint(self.min_crop_sz, self.max_crop_sz, (
+                    self.rand_buffer_sz,), dtype=torch.long, device=inp.device)
                 torch.distributed.broadcast(self.rand_buffer, 0)
                 self.rand_buffer_ptr = 0
             crop_sz = self.rand_buffer[self.rand_buffer_ptr]
@@ -128,7 +137,7 @@ class RandomAudioCropInjector(Injector):
             len = torch.min(lens)
         else:
             len = inp.shape[-1]
-            
+
         margin = len - crop_sz - self.min_buffer * 2
         if margin < 0:
             start = self.min_buffer
@@ -155,7 +164,7 @@ class AudioClipInjector(Injector):
         if len > self.clip_size:
             proportion_inp_remaining = self.clip_size/len
             inp = inp[:, :, :self.clip_size]
-            ctc = ctc[:,:int(proportion_inp_remaining*ctc.shape[-1])]
+            ctc = ctc[:, :int(proportion_inp_remaining*ctc.shape[-1])]
         return {self.output: inp, self.output_ctc: ctc}
 
 
@@ -173,9 +182,11 @@ class AudioResampleInjector(Injector):
 class DiscreteTokenInjector(Injector):
     def __init__(self, opt, env):
         super().__init__(opt, env)
-        cfg = opt_get(opt, ['dvae_config'], "../experiments/train_diffusion_vocoder_22k_level.yml")
+        cfg = opt_get(
+            opt, ['dvae_config'], "../experiments/train_diffusion_vocoder_22k_level.yml")
         dvae_name = opt_get(opt, ['dvae_name'], 'dvae')
-        self.dvae = load_model_from_config(cfg, dvae_name, device=f'cuda:{env["device"]}').eval()
+        self.dvae = load_model_from_config(
+            cfg, dvae_name, device=f'cuda:{env["device"]}').eval()
 
     def forward(self, state):
         inp = state[self.input]
@@ -190,21 +201,25 @@ class GptVoiceLatentInjector(Injector):
     This injector does all the legwork to generate latents out of a UnifiedVoice model, including encoding all audio
     inputs into a MEL spectrogram and discretizing the inputs.
     """
+
     def __init__(self, opt, env):
         super().__init__(opt, env)
         # For discrete tokenization.
-        cfg = opt_get(opt, ['dvae_config'], "../experiments/train_diffusion_vocoder_22k_level.yml")
+        cfg = opt_get(
+            opt, ['dvae_config'], "../experiments/train_diffusion_vocoder_22k_level.yml")
         dvae_name = opt_get(opt, ['dvae_name'], 'dvae')
         self.dvae = load_model_from_config(cfg, dvae_name).cuda().eval()
         # The unified_voice model.
-        cfg = opt_get(opt, ['gpt_config'], "../experiments/train_gpt_tts_unified.yml")
+        cfg = opt_get(opt, ['gpt_config'],
+                      "../experiments/train_gpt_tts_unified.yml")
         model_name = opt_get(opt, ['gpt_name'], 'gpt')
         pretrained_path = opt['gpt_path']
         self.gpt = load_model_from_config(cfg, model_name=model_name,
                                           also_load_savepoint=False, load_path=pretrained_path).cuda().eval()
         self.needs_move = True
         # Mel converter
-        self.mel_inj = TorchMelSpectrogramInjector({'in': 'wav', 'out': 'mel', 'mel_norm_file': '../experiments/clips_mel_norms.pth'},{})
+        self.mel_inj = TorchMelSpectrogramInjector(
+            {'in': 'wav', 'out': 'mel', 'mel_norm_file': '../experiments/clips_mel_norms.pth'}, {})
         # Aux input keys.
         self.conditioning_key = opt['conditioning_clip']
         self.text_input_key = opt['text']
@@ -238,9 +253,11 @@ class ReverseUnivnetInjector(Injector):
     """
     This injector specifically builds inputs and labels for a univnet detector.g
     """
+
     def __init__(self, opt, env):
         super().__init__(opt, env)
-        from scripts.audio.gen.speech_synthesis_utils import load_univnet_vocoder
+        from scripts.audio.gen.speech_synthesis_utils import \
+            load_univnet_vocoder
         self.univnet = load_univnet_vocoder().cuda()
         self.mel_input_key = opt['mel']
         self.label_output_key = opt['labels']
@@ -250,28 +267,36 @@ class ReverseUnivnetInjector(Injector):
         with torch.no_grad():
             original_audio = state[self.input]
             mel = state[self.mel_input_key]
-            decoded_mel = self.univnet.inference(mel)[:,:,:original_audio.shape[-1]]
+            decoded_mel = self.univnet.inference(
+                mel)[:, :, :original_audio.shape[-1]]
 
             if self.do_augmentations:
-                original_audio = original_audio + torch.rand_like(original_audio) * random.random() * .005
-                decoded_mel = decoded_mel + torch.rand_like(decoded_mel) * random.random() * .005
-                if(random.random() < .5):
-                    original_audio = torchaudio.functional.resample(torchaudio.functional.resample(original_audio, 24000, 10000), 10000, 24000)
-                if(random.random() < .5):
-                    decoded_mel = torchaudio.functional.resample(torchaudio.functional.resample(decoded_mel, 24000, 10000), 10000, 24000)
-                if(random.random() < .5):
-                    original_audio = torchaudio.functional.resample(original_audio, 24000, 22000 + random.randint(0,2000))
-                if(random.random() < .5):
-                    decoded_mel = torchaudio.functional.resample(decoded_mel, 24000, 22000 + random.randint(0,2000))
+                original_audio = original_audio + \
+                    torch.rand_like(original_audio) * random.random() * .005
+                decoded_mel = decoded_mel + \
+                    torch.rand_like(decoded_mel) * random.random() * .005
+                if (random.random() < .5):
+                    original_audio = torchaudio.functional.resample(
+                        torchaudio.functional.resample(original_audio, 24000, 10000), 10000, 24000)
+                if (random.random() < .5):
+                    decoded_mel = torchaudio.functional.resample(
+                        torchaudio.functional.resample(decoded_mel, 24000, 10000), 10000, 24000)
+                if (random.random() < .5):
+                    original_audio = torchaudio.functional.resample(
+                        original_audio, 24000, 22000 + random.randint(0, 2000))
+                if (random.random() < .5):
+                    decoded_mel = torchaudio.functional.resample(
+                        decoded_mel, 24000, 22000 + random.randint(0, 2000))
 
-                smallest_dim = min(original_audio.shape[-1], decoded_mel.shape[-1])
-                original_audio = original_audio[:,:,:smallest_dim]
-                decoded_mel = decoded_mel[:,:,:smallest_dim]
+                smallest_dim = min(
+                    original_audio.shape[-1], decoded_mel.shape[-1])
+                original_audio = original_audio[:, :, :smallest_dim]
+                decoded_mel = decoded_mel[:, :, :smallest_dim]
 
             labels = (torch.rand(mel.shape[0], 1, 1, device=mel.device) > .5)
             output = torch.where(labels, original_audio, decoded_mel)
 
-            return {self.output: output, self.label_output_key: labels[:,0,0].long()}
+            return {self.output: output, self.label_output_key: labels[:, 0, 0].long()}
 
 
 class ConditioningLatentDistributionDivergenceInjector(Injector):
@@ -279,19 +304,24 @@ class ConditioningLatentDistributionDivergenceInjector(Injector):
         super().__init__(opt, env)
         if 'gpt_config' in opt.keys():
             # The unified_voice model.
-            cfg = opt_get(opt, ['gpt_config'], "../experiments/train_gpt_tts_unified.yml")
+            cfg = opt_get(opt, ['gpt_config'],
+                          "../experiments/train_gpt_tts_unified.yml")
             model_name = opt_get(opt, ['gpt_name'], 'gpt')
             pretrained_path = opt['gpt_path']
             self.latent_producer = load_model_from_config(cfg, model_name=model_name,
                                                           also_load_savepoint=False, load_path=pretrained_path).eval()
-            self.mel_inj = TorchMelSpectrogramInjector({'in': 'wav', 'out': 'mel', 'mel_norm_file': '../experiments/clips_mel_norms.pth'},{})
+            self.mel_inj = TorchMelSpectrogramInjector(
+                {'in': 'wav', 'out': 'mel', 'mel_norm_file': '../experiments/clips_mel_norms.pth'}, {})
         else:
-            from models.audio.tts.unet_diffusion_tts_flat import DiffusionTtsFlat
+            from models.audio.tts.unet_diffusion_tts_flat import \
+                DiffusionTtsFlat
             self.latent_producer = DiffusionTtsFlat(model_channels=1024, num_layers=10, in_channels=100, out_channels=200,
-                                          in_latent_channels=1024, in_tokens=8193, dropout=0, use_fp16=False,
-                                          num_heads=16, layer_drop=0, unconditioned_percentage=0).eval()
-            self.latent_producer.load_state_dict(torch.load(opt['diffusion_path']))
-            self.mel_inj = TorchMelSpectrogramInjector({'in': 'wav', 'out': 'mel', 'mel_fmax': 12000, 'sampling_rate': 24000, 'n_mel_channels': 100},{})
+                                                    in_latent_channels=1024, in_tokens=8193, dropout=0, use_fp16=False,
+                                                    num_heads=16, layer_drop=0, unconditioned_percentage=0).eval()
+            self.latent_producer.load_state_dict(
+                torch.load(opt['diffusion_path']))
+            self.mel_inj = TorchMelSpectrogramInjector(
+                {'in': 'wav', 'out': 'mel', 'mel_fmax': 12000, 'sampling_rate': 24000, 'n_mel_channels': 100}, {})
         self.needs_move = True
         # Aux input keys.
         self.conditioning_key = opt['conditioning_clip']
@@ -311,7 +341,8 @@ class ConditioningLatentDistributionDivergenceInjector(Injector):
             mel_conds = torch.stack(mel_conds, dim=1)
 
             if self.needs_move:
-                self.latent_producer = self.latent_producer.to(mel_conds.device)
+                self.latent_producer = self.latent_producer.to(
+                    mel_conds.device)
             latents = self.latent_producer.get_conditioning_latent(mel_conds)
 
         sp_means, sp_vars = state_preds.mean(dim=0), state_preds.var(dim=0)
@@ -346,7 +377,7 @@ def pixel_shuffle_1d(x, upscale_factor):
 def pixel_unshuffle_1d(x, downscale):
     b, c, s = x.size()
     x = x.view(b, c, s//downscale, downscale)
-    x = x.permute(0,1,3,2).contiguous()
+    x = x.permute(0, 1, 3, 2).contiguous()
     x = x.view(b, c*downscale, s//downscale)
     return x
 
@@ -365,7 +396,8 @@ class Mel2vecCodesInjector(Injector):
     def __init__(self, opt, env):
         super().__init__(opt, env)
         self.m2v = get_music_codegen()
-        del self.m2v.quantizer.encoder  # This is a big memory sink which will not get used.
+        # This is a big memory sink which will not get used.
+        del self.m2v.quantizer.encoder
         self.needs_move = True
         self.inj_vector = opt_get(opt, ['vector'], False)
 
@@ -383,7 +415,8 @@ class ClvpTextInjector(Injector):
         super().__init__(opt, env)
         from scripts.audio.gen.speech_synthesis_utils import load_clvp
         self.clvp = load_clvp()
-        del self.clvp.speech_transformer  # We will only be using the text transformer.
+        # We will only be using the text transformer.
+        del self.clvp.speech_transformer
         self.needs_move = True
 
     def forward(self, state):
@@ -413,7 +446,7 @@ class ChannelClipInjector(Injector):
 
     def forward(self, state):
         inp = state[self.input]
-        return {self.output: inp[:,self.lo:self.hi]}
+        return {self.output: inp[:, self.lo:self.hi]}
 
 
 class MusicCheaterLatentInjector(Injector):
@@ -421,7 +454,8 @@ class MusicCheaterLatentInjector(Injector):
         super().__init__(opt, env)
         from models.audio.music.gpt_music2 import UpperEncoder
         self.encoder = UpperEncoder(256, 1024, 256).eval()
-        self.encoder.load_state_dict(torch.load('../experiments/music_cheater_encoder_256.pth', map_location=torch.device('cpu')))
+        self.encoder.load_state_dict(torch.load(
+            '../experiments/music_cheater_encoder_256.pth', map_location=torch.device('cpu')))
 
     def forward(self, state):
         with torch.no_grad():
@@ -436,15 +470,16 @@ class KmeansQuantizerInjector(Injector):
         super().__init__(opt, env)
         _, self.centroids = torch.load(opt['centroids'])
         k, b = self.centroids.shape
-        self.centroids = self.centroids.permute(1,0)
+        self.centroids = self.centroids.permute(1, 0)
 
     def forward(self, state):
         with torch.no_grad():
             x = state[self.input]
             self.centroids = self.centroids.to(x.device)
             b, c, s = x.shape
-            x = x.permute(0,2,1).reshape(b*s, c)
-            distances = x.pow(2).sum(1,keepdim=True) - 2 * x @ self.centroids + self.centroids.pow(2).sum(0, keepdim=True)
+            x = x.permute(0, 2, 1).reshape(b*s, c)
+            distances = x.pow(2).sum(1, keepdim=True) - 2 * \
+                x @ self.centroids + self.centroids.pow(2).sum(0, keepdim=True)
             distances[distances.isnan()] = 9999999999
             distances = distances.reshape(b, s, self.centroids.shape[-1])
             labels = distances.argmin(-1)
@@ -454,8 +489,10 @@ class KmeansQuantizerInjector(Injector):
 class MusicCheaterArInjector(Injector):
     def __init__(self, opt, env):
         super().__init__(opt, env)
-        self.cheater_ar = ConditioningAR(1024, layers=24, dropout=0, cond_free_percent=0).eval()
-        self.cheater_ar.load_state_dict(torch.load('../experiments/music_cheater_ar.pth', map_location=torch.device('cpu')))
+        self.cheater_ar = ConditioningAR(
+            1024, layers=24, dropout=0, cond_free_percent=0).eval()
+        self.cheater_ar.load_state_dict(torch.load(
+            '../experiments/music_cheater_ar.pth', map_location=torch.device('cpu')))
         self.cond_key = opt['cheater_latent_key']
         self.needs_move = True
 

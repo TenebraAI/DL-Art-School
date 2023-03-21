@@ -1,7 +1,7 @@
 import torch
 from torch import nn as nn
 
-from models.image_generation.srflow import thops
+from dlas.models.image_generation.srflow import thops
 
 
 class _ActNorm(nn.Module):
@@ -33,10 +33,13 @@ class _ActNorm(nn.Module):
         if (self.bias != 0).any():
             self.inited = True
             return
-        assert input.device == self.bias.device, (input.device, self.bias.device)
+        assert input.device == self.bias.device, (
+            input.device, self.bias.device)
         with torch.no_grad():
-            bias = thops.mean(input.clone(), dim=[0, 2, 3], keepdim=True) * -1.0
-            vars = thops.mean((input.clone() + bias) ** 2, dim=[0, 2, 3], keepdim=True)
+            bias = thops.mean(input.clone(), dim=[
+                              0, 2, 3], keepdim=True) * -1.0
+            vars = thops.mean((input.clone() + bias) ** 2,
+                              dim=[0, 2, 3], keepdim=True)
             logs = torch.log(self.scale / (torch.sqrt(vars) + 1e-6))
             self.bias.data.copy_(bias.data)
             self.logs.data.copy_(logs.data)
@@ -60,7 +63,8 @@ class _ActNorm(nn.Module):
             logs = logs + offset
 
         if not reverse:
-            input = input * torch.exp(logs) # should have shape batchsize, n_channels, 1, 1
+            # should have shape batchsize, n_channels, 1, 1
+            input = input * torch.exp(logs)
             # input = input * torch.exp(logs+logs_offset)
         else:
             input = input * torch.exp(-logs)
@@ -120,4 +124,3 @@ class MaskedActNorm2d(ActNorm2d):
         logdet[mask] = logdet_out[mask]
 
         return input, logdet
-

@@ -5,7 +5,6 @@ https://github.com/hojonathanho/diffusion/blob/1e0dceb3b3495bbe19116a5e1b3596cd0
 """
 
 import numpy as np
-
 import torch as th
 
 
@@ -71,7 +70,8 @@ def discretized_gaussian_log_likelihood(x, *, means, log_scales):
     log_probs = th.where(
         x < -0.999,
         log_cdf_plus,
-        th.where(x > 0.999, log_one_minus_cdf_min, th.log(cdf_delta.clamp(min=1e-12))),
+        th.where(x > 0.999, log_one_minus_cdf_min,
+                 th.log(cdf_delta.clamp(min=1e-12))),
     )
     assert log_probs.shape == x.shape
     return log_probs

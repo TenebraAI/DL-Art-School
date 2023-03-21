@@ -1,7 +1,7 @@
 from torchvision.models import vgg16
 
-from trainer.networks import register_model
-from utils.util import opt_get
+from dlas.trainer.networks import register_model
+from dlas.utils.util import opt_get
 
 
 @register_model

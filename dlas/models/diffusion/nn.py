@@ -6,7 +6,8 @@ import math
 
 import torch as th
 import torch.nn as nn
-import torch_intermediary as ml
+
+import dlas.torch_intermediary as ml
 
 
 # PyTorch 1.7 has SiLU, but we support PyTorch 1.5.
@@ -121,15 +122,17 @@ def timestep_embedding(timesteps, dim, max_period=10000):
     """
     half = dim // 2
     freqs = th.exp(
-        -math.log(max_period) * th.arange(start=0, end=half, dtype=th.float32) / half
+        -math.log(max_period) * th.arange(start=0,
+                                          end=half, dtype=th.float32) / half
     ).to(device=timesteps.device)
     if len(timesteps.shape) == 1:
         args = timesteps[:, None].float() * freqs[None]
     else:
-        args = (timesteps.float() * freqs.view(1,half,1)).permute(0,2,1)
+        args = (timesteps.float() * freqs.view(1, half, 1)).permute(0, 2, 1)
     embedding = th.cat([th.cos(args), th.sin(args)], dim=-1)
     if dim % 2:
-        embedding = th.cat([embedding, th.zeros_like(embedding[:, :1])], dim=-1)
+        embedding = th.cat(
+            [embedding, th.zeros_like(embedding[:, :1])], dim=-1)
     return embedding
 
 
@@ -163,7 +166,8 @@ class CheckpointFunction(th.autograd.Function):
 
     @staticmethod
     def backward(ctx, *output_grads):
-        ctx.input_tensors = [x.detach().requires_grad_(True) for x in ctx.input_tensors]
+        ctx.input_tensors = [x.detach().requires_grad_(True)
+                             for x in ctx.input_tensors]
         with th.enable_grad():
             # Fixes a bug where the first op in run_function modifies the
             # Tensor storage in place, which is not allowed for detach()'d

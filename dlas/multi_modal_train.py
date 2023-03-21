@@ -10,12 +10,12 @@
 #    state when re-started.
 import argparse
 
+import torch
 import yaml
 
-import train
-import utils.options as option
-from utils.util import OrderedYaml
-import torch
+import dlas.train
+import dlas.utils.options as option
+from dlas.utils.util import OrderedYaml
 
 
 def main(master_opt, launcher):
@@ -28,7 +28,7 @@ def main(master_opt, launcher):
         sub_opt_parsed = option.parse(sub_opt, is_train=True)
         trainer = train.Trainer()
 
-        #### distributed training settings
+        # distributed training settings
         if launcher == 'none':  # disabled distributed training
             sub_opt_parsed['dist'] = False
             trainer.rank = -1
@@ -56,8 +56,10 @@ def main(master_opt, launcher):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-opt', type=str, help='Path to option YAML file.', default='../options/train_exd_imgset_chained_structured_trans_invariance.yml')
-    parser.add_argument('--launcher', choices=['none', 'pytorch'], default='none', help='job launcher')
+    parser.add_argument('-opt', type=str, help='Path to option YAML file.',
+                        default='../options/train_exd_imgset_chained_structured_trans_invariance.yml')
+    parser.add_argument(
+        '--launcher', choices=['none', 'pytorch'], default='none', help='job launcher')
     parser.add_argument('--local_rank', type=int, default=0)
     args = parser.parse_args()
 

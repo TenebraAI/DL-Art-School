@@ -1,12 +1,12 @@
 from collections import OrderedDict
 
-import torch
-from torch import nn
-import torch.nn.functional as F
 import numpy as np
+import torch
+import torch.nn.functional as F
+from torch import nn
 
-from trainer.networks import register_model
-from utils.util import opt_get
+from dlas.trainer.networks import register_model
+from dlas.utils.util import opt_get
 
 
 class BlurLayer(nn.Module):
@@ -45,8 +45,10 @@ class Upscale2d(nn.Module):
             x = x * gain
         if factor != 1:
             shape = x.shape
-            x = x.view(shape[0], shape[1], shape[2], 1, shape[3], 1).expand(-1, -1, -1, factor, -1, factor)
-            x = x.contiguous().view(shape[0], shape[1], factor * shape[2], factor * shape[3])
+            x = x.view(shape[0], shape[1], shape[2], 1, shape[3],
+                       1).expand(-1, -1, -1, factor, -1, factor)
+            x = x.contiguous().view(
+                shape[0], shape[1], factor * shape[2], factor * shape[3])
         return x
 
     def __init__(self, factor=2, gain=1):
@@ -104,7 +106,8 @@ class EqualizedConv2d(nn.Module):
             self.downscale = Downscale2d()
         else:
             self.downscale = None
-        he_std = gain * (input_channels * kernel_size ** 2) ** (-0.5)  # He init
+        he_std = gain * (input_channels * kernel_size **
+                         2) ** (-0.5)  # He init
         self.kernel_size = kernel_size
         if use_wscale:
             init_std = 1.0 / lrmul
@@ -134,8 +137,10 @@ class EqualizedConv2d(nn.Module):
             w = w.permute(1, 0, 2, 3)
             # probably applying a conv on w would be more efficient. also this quadruples the weight (average)?!
             w = F.pad(w, [1, 1, 1, 1])
-            w = w[:, :, 1:, 1:] + w[:, :, :-1, 1:] + w[:, :, 1:, :-1] + w[:, :, :-1, :-1]
-            x = F.conv_transpose2d(x, w, stride=2, padding=(w.size(-1) - 1) // 2)
+            w = w[:, :, 1:, 1:] + w[:, :, :-1, 1:] + \
+                w[:, :, 1:, :-1] + w[:, :, :-1, :-1]
+            x = F.conv_transpose2d(
+                x, w, stride=2, padding=(w.size(-1) - 1) // 2)
             have_convolution = True
         elif self.upscale is not None:
             x = self.upscale(x)
@@ -146,7 +151,8 @@ class EqualizedConv2d(nn.Module):
             w = self.weight * self.w_mul
             w = F.pad(w, [1, 1, 1, 1])
             # in contrast to upscale, this is a mean...
-            w = (w[:, :, 1:, 1:] + w[:, :, :-1, 1:] + w[:, :, 1:, :-1] + w[:, :, :-1, :-1]) * 0.25  # avg_pool?
+            w = (w[:, :, 1:, 1:] + w[:, :, :-1, 1:] +
+                 w[:, :, 1:, :-1] + w[:, :, :-1, :-1]) * 0.25  # avg_pool?
             x = F.conv2d(x, w, stride=2, padding=(w.size(-1) - 1) // 2)
             have_convolution = True
             downscale = None
@@ -157,7 +163,8 @@ class EqualizedConv2d(nn.Module):
         if not have_convolution and intermediate is None:
             return F.conv2d(x, self.weight * self.w_mul, bias, padding=self.kernel_size // 2)
         elif not have_convolution:
-            x = F.conv2d(x, self.weight * self.w_mul, None, padding=self.kernel_size // 2)
+            x = F.conv2d(x, self.weight * self.w_mul, None,
+                         padding=self.kernel_size // 2)
 
         if intermediate is not None:
             x = intermediate(x)
@@ -180,7 +187,8 @@ class EqualizedLinear(nn.Module):
         else:
             init_std = he_std / lrmul
             self.w_mul = lrmul
-        self.weight = torch.nn.Parameter(torch.randn(output_size, input_size) * init_std)
+        self.weight = torch.nn.Parameter(
+            torch.randn(output_size, input_size) * init_std)
         if bias:
             self.bias = torch.nn.Parameter(torch.zeros(output_size))
             self.b_mul = lrmul
@@ -198,7 +206,6 @@ class View(nn.Module):
     def __init__(self, *shape):
         super().__init__()
         self.shape = shape
-
 
     def forward(self, x):
         return x.view(x.size(0), *self.shape)
@@ -218,8 +225,10 @@ class StddevLayer(nn.Module):
         y = y - y.mean(0, keepdim=True)
         y = (y ** 2).mean(0, keepdim=True)
         y = (y + 1e-8) ** 0.5
-        y = y.mean([3, 4, 5], keepdim=True).squeeze(3)  # don't keep the meaned-out channels
-        y = y.expand(group_size, -1, -1, h, w).clone().reshape(b, self.num_new_features, h, w)
+        y = y.mean([3, 4, 5], keepdim=True).squeeze(
+            3)  # don't keep the meaned-out channels
+        y = y.expand(group_size, -1, -1, h, w).clone().reshape(b,
+                                                               self.num_new_features, h, w)
         z = torch.cat([x, y], dim=1)
         return z
 
@@ -227,14 +236,14 @@ class StddevLayer(nn.Module):
 class DiscriminatorBlock(nn.Sequential):
     def __init__(self, in_channels, out_channels, gain, use_wscale, activation_layer, blur_kernel):
         super().__init__(OrderedDict([
-            ('conv0', EqualizedConv2d(in_channels, in_channels, kernel_size=3, gain=gain, use_wscale=use_wscale)),
+            ('conv0', EqualizedConv2d(in_channels, in_channels,
+             kernel_size=3, gain=gain, use_wscale=use_wscale)),
             # out channels nf(res-1)
             ('act0', activation_layer),
             ('blur', BlurLayer(kernel=blur_kernel)),
             ('conv1_down', EqualizedConv2d(in_channels, out_channels, kernel_size=3,
                                            gain=gain, use_wscale=use_wscale, downscale=True)),
             ('act1', activation_layer)]))
-
 
 
 class DiscriminatorTop(nn.Sequential):
@@ -265,7 +274,8 @@ class DiscriminatorTop(nn.Sequential):
 
         layers = []
         if mbstd_group_size > 1:
-            layers.append(('stddev_layer', StddevLayer(mbstd_group_size, mbstd_num_features)))
+            layers.append(('stddev_layer', StddevLayer(
+                mbstd_group_size, mbstd_num_features)))
 
         if in_channels2 is None:
             in_channels2 = in_channels
@@ -362,8 +372,10 @@ class StyleGanDiscriminator(nn.Module):
         elif self.structure == 'linear':
             assert depth < self.depth, "Requested output depth cannot be produced"
             if depth > 0:
-                residual = self.from_rgb[self.depth - depth](self.temporaryDownsampler(images_in))
-                straight = self.blocks[self.depth - depth - 1](self.from_rgb[self.depth - depth - 1](images_in))
+                residual = self.from_rgb[self.depth -
+                                         depth](self.temporaryDownsampler(images_in))
+                straight = self.blocks[self.depth - depth -
+                                       1](self.from_rgb[self.depth - depth - 1](images_in))
                 x = (alpha * straight) + ((1 - alpha) * residual)
 
                 for block in self.blocks[(self.depth - depth):]:

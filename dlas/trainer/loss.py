@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-import numpy as np
-from utils.colors import rgb2ycbcr
 
 
 class CharbonnierLoss(nn.Module):
@@ -40,7 +38,8 @@ class GANLoss(nn.Module):
         elif self.gan_type == 'max_spread':
             self.loss = ZeroSpreadLoss()
         else:
-            raise NotImplementedError('GAN type [{:s}] is not found'.format(self.gan_type))
+            raise NotImplementedError(
+                'GAN type [{:s}] is not found'.format(self.gan_type))
 
     def get_target_label(self, input, target_is_real):
         if target_is_real:

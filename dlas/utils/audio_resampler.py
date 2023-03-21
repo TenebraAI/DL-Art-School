@@ -1,6 +1,7 @@
-import torch
 import numpy as np
+import torch
 from scipy import special
+
 
 # Courtesy of https://www.kaggle.com/smallyellowduck/fast-audio-resampling-layer-in-pytorch
 class AudioResampler(torch.nn.Module):
@@ -105,7 +106,8 @@ class AudioResampler(torch.nn.Module):
         # We want the weights as used by torch's conv1d code; format is
         #  (out_channels, in_channels, kernel_width)
         # https://pytorch.org/docs/stable/nn.functional.html
-        weights = torch.tensor((output_sr, input_sr, kernel_width), dtype=dtype)
+        weights = torch.tensor(
+            (output_sr, input_sr, kernel_width), dtype=dtype)
 
         # Computations involving time will be in units of 1 block.  Actually this
         # is the same as the `canonical` time axis since each block has input_sr
@@ -124,8 +126,8 @@ class AudioResampler(torch.nn.Module):
         # which sign works.
 
         times = (
-                np.arange(output_sr, dtype=np_dtype).reshape((output_sr, 1, 1)) / output_sr -
-                np.arange(input_sr, dtype=np_dtype).reshape((1, input_sr, 1)) / input_sr -
+            np.arange(output_sr, dtype=np_dtype).reshape((output_sr, 1, 1)) / output_sr -
+            np.arange(input_sr, dtype=np_dtype).reshape((1, input_sr, 1)) / input_sr -
                 (np.arange(kernel_width, dtype=np_dtype).reshape((1, 1, kernel_width)) - blocks_per_side))
 
         def hann_window(a):
@@ -139,7 +141,8 @@ class AudioResampler(torch.nn.Module):
             return np.heaviside(1 - np.abs(a), 0.0) * (0.5 + 0.5 * np.cos(a * np.pi))
 
         def kaiser_window(a, beta):
-            w = special.i0(beta * np.sqrt(np.clip(1 - ((a - 0.0) / 1.0) ** 2.0, 0.0, 1.0))) / special.i0(beta)
+            w = special.i0(
+                beta * np.sqrt(np.clip(1 - ((a - 0.0) / 1.0) ** 2.0, 0.0, 1.0))) / special.i0(beta)
             return np.heaviside(1 - np.abs(a), 0.0) * w
 
         # The weights below are a sinc function times a Hann-window function.
@@ -173,7 +176,8 @@ class AudioResampler(torch.nn.Module):
             self.resample_type = 'integer_downsample'
             self.padding = input_sr * blocks_per_side
             weights = torch.tensor(weights, dtype=dtype, requires_grad=False)
-            self.weights = weights.transpose(1, 2).contiguous().view(1, 1, input_sr * kernel_width)
+            self.weights = weights.transpose(1, 2).contiguous().view(
+                1, 1, input_sr * kernel_width)
 
         elif input_sr == 1:
             # In this case we'll be doing conv_transpose, so we want the same weights that
@@ -182,12 +186,14 @@ class AudioResampler(torch.nn.Module):
             self.resample_type = 'integer_upsample'
             self.padding = output_sr * blocks_per_side
             weights = torch.tensor(weights, dtype=dtype, requires_grad=False)
-            self.weights = weights.flip(2).transpose(0, 2).contiguous().view(1, 1, output_sr * kernel_width)
+            self.weights = weights.flip(2).transpose(
+                0, 2).contiguous().view(1, 1, output_sr * kernel_width)
         else:
             self.resample_type = 'general'
             self.reshaped = False
             self.padding = blocks_per_side
-            self.weights = torch.tensor(weights, dtype=dtype, requires_grad=False)
+            self.weights = torch.tensor(
+                weights, dtype=dtype, requires_grad=False)
 
         self.weights = torch.nn.Parameter(self.weights, requires_grad=False)
 
@@ -237,7 +243,8 @@ class AudioResampler(torch.nn.Module):
                 # TODO: pad with zeros.
                 raise RuntimeError("Signal is too short to resample")
             # data = data[:, 0:(num_blocks*self.input_sr)]  # Truncate input
-            data = data[:, 0:(num_blocks * self.input_sr)].view(minibatch_size, num_blocks, self.input_sr)
+            data = data[:, 0:(num_blocks * self.input_sr)
+                        ].view(minibatch_size, num_blocks, self.input_sr)
 
             # Torch's conv1d expects input data with shape (minibatch, in_channels, time_steps), so transpose
             data = data.transpose(1, 2)

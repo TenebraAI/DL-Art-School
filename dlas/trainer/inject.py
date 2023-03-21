@@ -1,9 +1,9 @@
 import importlib
 import inspect
+import os
 import pkgutil
 import re
 import sys
-import os
 
 import torch.nn
 
@@ -35,18 +35,21 @@ def format_injector_name(name):
 # field will be properly populated.
 def find_registered_injectors(base_path="trainer/injectors"):
     # this has the same modification networks.py has, so be sure to mirror it
-    path = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), f'../{base_path}'))
+    path = os.path.normpath(os.path.join(os.path.dirname(
+        os.path.realpath(__file__)), f'../{base_path}'))
     module_iter = pkgutil.walk_packages([path])
     results = {}
     for mod in module_iter:
         if mod.ispkg:
             EXCLUSION_LIST = []
             if mod.name not in EXCLUSION_LIST:
-                results.update(find_registered_injectors(f'{base_path}/{mod.name}'))
+                results.update(find_registered_injectors(
+                    f'{base_path}/{mod.name}'))
         else:
-            mod_name = f'{base_path}/{mod.name}'.replace('/', '.')
+            mod_name = f'dlas/{base_path}/{mod.name}'.replace('/', '.')
             importlib.import_module(mod_name)
-            classes = inspect.getmembers(sys.modules[mod_name], inspect.isclass)
+            classes = inspect.getmembers(
+                sys.modules[mod_name], inspect.isclass)
             for name, obj in classes:
                 if 'Injector' in [mro.__name__ for mro in inspect.getmro(obj)]:
                     results[format_injector_name(name)] = obj

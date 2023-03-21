@@ -1,8 +1,7 @@
 import functools
-from abc import abstractmethod
-
 import math
-from typing import Union, Type, Callable, Optional, List
+from abc import abstractmethod
+from typing import Callable, List, Optional, Type, Union
 
 import numpy as np
 import torch
@@ -15,18 +14,14 @@ from torch import Tensor
 from torchvision.models import resnet50
 from torchvision.models.resnet import BasicBlock, Bottleneck, conv1x1
 
-from models.diffusion.fp16_util import convert_module_to_f16, convert_module_to_f32
-from models.diffusion.nn import (
-    conv_nd,
-    linear,
-    avg_pool_nd,
-    zero_module,
-    normalization,
-    timestep_embedding,
-)
-from trainer.networks import register_model
-from utils.util import checkpoint
-import torch_intermediary as ml
+import dlas.torch_intermediary as ml
+from dlas.models.diffusion.fp16_util import (convert_module_to_f16,
+                                             convert_module_to_f32)
+from dlas.models.diffusion.nn import (avg_pool_nd, conv_nd, linear,
+                                      normalization, timestep_embedding,
+                                      zero_module)
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint
 
 
 class AttentionPool2d(nn.Module):
@@ -105,7 +100,8 @@ class Upsample(nn.Module):
         self.use_conv = use_conv
         self.dims = dims
         if use_conv:
-            self.conv = conv_nd(dims, self.channels, self.out_channels, 3, padding=1)
+            self.conv = conv_nd(dims, self.channels,
+                                self.out_channels, 3, padding=1)
 
     def forward(self, x):
         assert x.shape[1] == self.channels
@@ -215,7 +211,8 @@ class ResBlock(TimestepBlock):
             nn.SiLU(),
             nn.Dropout(p=dropout),
             zero_module(
-                conv_nd(dims, self.out_channels, self.out_channels, 3, padding=1)
+                conv_nd(dims, self.out_channels,
+                        self.out_channels, 3, padding=1)
             ),
         )
 
@@ -226,7 +223,8 @@ class ResBlock(TimestepBlock):
                 dims, channels, self.out_channels, 3, padding=1
             )
         else:
-            self.skip_connection = conv_nd(dims, channels, self.out_channels, 1)
+            self.skip_connection = conv_nd(
+                dims, channels, self.out_channels, 1)
 
     def forward(self, x, emb):
         """
@@ -349,7 +347,8 @@ class QKVAttentionLegacy(nn.Module):
         bs, width, length = qkv.shape
         assert width % (3 * self.n_heads) == 0
         ch = width // (3 * self.n_heads)
-        q, k, v = qkv.reshape(bs * self.n_heads, ch * 3, length).split(ch, dim=1)
+        q, k, v = qkv.reshape(bs * self.n_heads, ch * 3,
+                              length).split(ch, dim=1)
         scale = 1 / math.sqrt(math.sqrt(ch))
         weight = th.einsum(
             "bct,bcs->bts", q * scale, k * scale
@@ -390,7 +389,8 @@ class QKVAttention(nn.Module):
             (k * scale).view(bs * self.n_heads, ch, length),
         )  # More stable with f16 than dividing afterwards
         weight = th.softmax(weight.float(), dim=-1).type(weight.dtype)
-        a = th.einsum("bts,bcs->bct", weight, v.reshape(bs * self.n_heads, ch, length))
+        a = th.einsum("bts,bcs->bct", weight,
+                      v.reshape(bs * self.n_heads, ch, length))
         return a.reshape(bs, -1, length)
 
     @staticmethod
@@ -540,7 +540,8 @@ class UNetModel(nn.Module):
                 ds *= 2
                 self._feature_size += ch
 
-        self.latent_join_reduce = ResBlock(ch*2, time_embed_dim, dropout, out_channels=ch, dims=dims, use_scale_shift_norm=use_scale_shift_norm)
+        self.latent_join_reduce = ResBlock(
+            ch*2, time_embed_dim, dropout, out_channels=ch, dims=dims, use_scale_shift_norm=use_scale_shift_norm)
         self.middle_block = TimestepEmbedSequential(
             ResBlock(
                 ch,
@@ -611,7 +612,8 @@ class UNetModel(nn.Module):
         self.out = nn.Sequential(
             normalization(ch),
             nn.SiLU(),
-            zero_module(conv_nd(dims, model_channels, out_channels, 3, padding=1)),
+            zero_module(conv_nd(dims, model_channels,
+                        out_channels, 3, padding=1)),
         )
 
     def convert_to_fp16(self):
@@ -644,7 +646,8 @@ class UNetModel(nn.Module):
         ), "must specify y if and only if the model is class-conditional"
 
         hs = []
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+        emb = self.time_embed(timestep_embedding(
+            timesteps, self.model_channels))
 
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)
@@ -655,7 +658,8 @@ class UNetModel(nn.Module):
             h = module(h, emb)
             hs.append(h)
         b, c = latent.shape
-        h = torch.cat([h, latent.view(b,c,1,1).repeat(1,1,h.shape[-2],h.shape[-1])], dim=1)
+        h = torch.cat([h, latent.view(b, c, 1, 1).repeat(
+            1, 1, h.shape[-2], h.shape[-1])], dim=1)
         h = self.latent_join_reduce(h, emb)
         h = self.middle_block(h, emb)
         for module in self.output_blocks:
@@ -678,11 +682,14 @@ class SuperResModel(UNetModel):
 
     def forward(self, x, timesteps, latent, low_res=None, corruption_factor=None, **kwargs):
         b, _, new_height, new_width = x.shape
-        upsampled = F.interpolate(low_res, (new_height, new_width), mode="bilinear")
+        upsampled = F.interpolate(
+            low_res, (new_height, new_width), mode="bilinear")
         if corruption_factor is not None:
-            corruption_factor = corruption_factor.view(b, -1, 1, 1).repeat(1, 1, new_height, new_width)
+            corruption_factor = corruption_factor.view(
+                b, -1, 1, 1).repeat(1, 1, new_height, new_width)
         else:
-            corruption_factor = torch.zeros((b, self.num_corruptions, new_height, new_width), dtype=torch.float, device=x.device)
+            corruption_factor = torch.zeros(
+                (b, self.num_corruptions, new_height, new_width), dtype=torch.float, device=x.device)
         upsampled = torch.cat([upsampled, corruption_factor], dim=1)
         x = th.cat([x, upsampled], dim=1)
         res = super().forward(x, latent, timesteps, **kwargs)
@@ -728,21 +735,22 @@ class ResNetEncoder(nn.Module):
         self.layer1 = self._make_layer(block, 64, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2,
                                        dilate=replace_stride_with_dilation[0])
-        f=128
+        f = 128
         if self.depth > 2:
             self.layer3 = self._make_layer(block, 256, layers[2], stride=2,
                                            dilate=replace_stride_with_dilation[1])
-            f=256
+            f = 256
         if self.depth > 3:
             self.layer4 = self._make_layer(block, 512, layers[3], stride=2,
                                            dilate=replace_stride_with_dilation[2])
-            f=512
+            f = 512
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = ml.Linear(f * block.expansion, output_dim)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(
+                    m.weight, mode='fan_out', nonlinearity='relu')
             elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
@@ -753,9 +761,11 @@ class ResNetEncoder(nn.Module):
         if zero_init_residual:
             for m in self.modules():
                 if isinstance(m, Bottleneck):
-                    nn.init.constant_(m.bn3.weight, 0)  # type: ignore[arg-type]
+                    # type: ignore[arg-type]
+                    nn.init.constant_(m.bn3.weight, 0)
                 elif isinstance(m, BasicBlock):
-                    nn.init.constant_(m.bn2.weight, 0)  # type: ignore[arg-type]
+                    # type: ignore[arg-type]
+                    nn.init.constant_(m.bn2.weight, 0)
 
     def _make_layer(self, block: Type[Union[BasicBlock, Bottleneck]], planes: int, blocks: int,
                     stride: int = 1, dilate: bool = False) -> nn.Sequential:
@@ -832,10 +842,10 @@ if __name__ == '__main__':
     for res in "16,8".split(","):
         attention_ds.append(128 // int(res))
     srm = UnetWithBuiltInLatentEncoder(image_size=64, in_channels=3, model_channels=64, out_channels=3, num_res_blocks=1, attention_resolutions=attention_ds, num_heads=4,
-                        num_heads_upsample=-1, use_scale_shift_norm=True)
-    x = torch.randn(1,3,64,64)
-    alt_x = torch.randn(1,3,64,64)
-    l = torch.randn(1,3,32,32)
+                                       num_heads_upsample=-1, use_scale_shift_norm=True)
+    x = torch.randn(1, 3, 64, 64)
+    alt_x = torch.randn(1, 3, 64, 64)
+    l = torch.randn(1, 3, 32, 32)
     ts = torch.LongTensor([555])
     y = srm(x, ts, alt_x, low_res=l)
     print(y.shape, y.mean(), y.std(), y.min(), y.max())

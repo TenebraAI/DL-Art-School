@@ -1,23 +1,24 @@
+import os.path as osp
+
+import numpy as np
 from scipy.io import wavfile
+from spleeter.audio.adapter import AudioAdapter
 from spleeter.separator import Separator
 from tqdm import tqdm
 
-from data.util import find_audio_files
-import os.path as osp
-from spleeter.audio.adapter import AudioAdapter
-import numpy as np
-
+from dlas.data.util import find_audio_files
 
 if __name__ == '__main__':
     src_dir = 'P:\\Audiobooks-Podcasts'
-    #src_dir = 'E:\\audio\\books'
+    # src_dir = 'E:\\audio\\books'
     output_dir = 'D:\\data\\audio\\misc-split'
     output_dir_lq = 'D:\\data\\audio\\misc-split-with-bg'
     output_dir_garbage = 'D:\\data\\audio\\misc-split-garbage'
-    #output_dir = 'E:\\audio\\books-clips'
+    # output_dir = 'E:\\audio\\books-clips'
     clip_length = 5  # In seconds
-    sparsity = .1  # Only this proportion of the total clips are extracted as wavs.
-    output_sample_rate=22050
+    # Only this proportion of the total clips are extracted as wavs.
+    sparsity = .1
+    output_sample_rate = 22050
 
     audio_loader = AudioAdapter.default()
     separator = Separator('spleeter:2stems')
@@ -35,12 +36,13 @@ if __name__ == '__main__':
         if len(file_basis) > 100:
             file_basis = file_basis[:100]
         try:
-            wave, sample_rate = audio_loader.load(file, sample_rate=output_sample_rate)
+            wave, sample_rate = audio_loader.load(
+                file, sample_rate=output_sample_rate)
         except:
             print(f"Error with {file}")
             continue
 
-        #if len(wave.shape) < 2:
+        # if len(wave.shape) < 2:
         #    continue
 
         # Calculate how much data we need to extract for each clip.
@@ -71,5 +73,6 @@ if __name__ == '__main__':
             if len(os.shape) > 1:
                 os = os[:, 0]  # Just use the first channel.
 
-            wavfile.write(osp.join(od, f'{e}_{file_basis}_{i}.wav'), output_sample_rate, os)
+            wavfile.write(
+                osp.join(od, f'{e}_{file_basis}_{i}.wav'), output_sample_rate, os)
             i = i + interval

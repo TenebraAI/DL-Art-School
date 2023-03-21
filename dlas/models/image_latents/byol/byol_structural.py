@@ -4,17 +4,19 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from data.images.byol_attachment import reconstructed_shared_regions
-from models.image_latents.byol.byol_model_wrapper import singleton, EMA, get_module_device, set_requires_grad, \
-    update_moving_average
-from trainer.networks import create_model, register_model
-from utils.util import checkpoint
+from dlas.data.images.byol_attachment import reconstructed_shared_regions
+from dlas.models.image_latents.byol.byol_model_wrapper import (
+    EMA, get_module_device, set_requires_grad, singleton,
+    update_moving_average)
+from dlas.trainer.networks import create_model, register_model
+from dlas.utils.util import checkpoint
+
 
 # loss function
 def structural_loss_fn(x, y):
     # Combine the structural dimensions into the batch dimension, then compute the "normal" BYOL loss.
-    x = x.permute(0,2,3,1).flatten(0,2)
-    y = y.permute(0,2,3,1).flatten(0,2)
+    x = x.permute(0, 2, 3, 1).flatten(0, 2)
+    y = y.permute(0, 2, 3, 1).flatten(0, 2)
     x = F.normalize(x, dim=-1, p=2)
     y = F.normalize(y, dim=-1, p=2)
     return 2 - 2 * (x * y).sum(dim=-1)
@@ -70,7 +72,8 @@ class NetWrapper(nn.Module):
 
     @singleton('projector')
     def _get_projector(self, hidden):
-        projector = StructuralTail(hidden.shape[1], self.projection_size, self.projection_hidden_size)
+        projector = StructuralTail(
+            hidden.shape[1], self.projection_size, self.projection_hidden_size)
         return projector.to(hidden)
 
     def get_representation(self, x):
@@ -116,13 +119,15 @@ class StructuralBYOL(nn.Module):
             for p in net.parameters():
                 p.DO_NOT_TRAIN = True
             self.frozen = True
-        self.online_encoder = NetWrapper(net, projection_size, projection_hidden_size, layer=hidden_layer)
+        self.online_encoder = NetWrapper(
+            net, projection_size, projection_hidden_size, layer=hidden_layer)
 
         self.use_momentum = use_momentum
         self.target_encoder = None
         self.target_ema_updater = EMA(moving_average_decay)
 
-        self.online_predictor = StructuralTail(projection_size, projection_size, projection_hidden_size)
+        self.online_predictor = StructuralTail(
+            projection_size, projection_size, projection_hidden_size)
 
         # get device of network and make wrapper same device
         device = get_module_device(net)
@@ -145,7 +150,8 @@ class StructuralBYOL(nn.Module):
     def update_for_step(self, step, __):
         assert self.use_momentum, 'you do not need to update the moving average, since you have turned off momentum for the target encoder'
         assert self.target_encoder is not None, 'target encoder has not been created yet'
-        update_moving_average(self.target_ema_updater, self.target_encoder, self.online_encoder)
+        update_moving_average(self.target_ema_updater,
+                              self.target_encoder, self.online_encoder)
         if self.frozen and self.freeze_until < step:
             print("Unfreezing model weights. Let the latent training commence..")
             for p in self.online_encoder.net.parameters():
@@ -160,18 +166,23 @@ class StructuralBYOL(nn.Module):
         online_pred_two = self.online_predictor(online_proj_two)
 
         with torch.no_grad():
-            target_encoder = self._get_target_encoder() if self.use_momentum else self.online_encoder
+            target_encoder = self._get_target_encoder(
+            ) if self.use_momentum else self.online_encoder
             target_proj_one = target_encoder(image_one).detach()
             target_proj_two = target_encoder(image_two).detach()
 
         # In the structural BYOL, only the regions of the source image that are shared between the two augments are
         # compared. These regions can be extracted from the latents using `reconstruct_shared_regions`.
         if similar_region_params is not None:
-            online_pred_one, target_proj_two = reconstructed_shared_regions(online_pred_one, target_proj_two, similar_region_params)
-        loss_one = structural_loss_fn(online_pred_one, target_proj_two.detach())
+            online_pred_one, target_proj_two = reconstructed_shared_regions(
+                online_pred_one, target_proj_two, similar_region_params)
+        loss_one = structural_loss_fn(
+            online_pred_one, target_proj_two.detach())
         if similar_region_params is not None:
-            online_pred_two, target_proj_one = reconstructed_shared_regions(online_pred_two, target_proj_one, similar_region_params)
-        loss_two = structural_loss_fn(online_pred_two, target_proj_one.detach())
+            online_pred_two, target_proj_one = reconstructed_shared_regions(
+                online_pred_two, target_proj_one, similar_region_params)
+        loss_two = structural_loss_fn(
+            online_pred_two, target_proj_one.detach())
 
         loss = loss_one + loss_two
         return loss.mean()
@@ -181,9 +192,11 @@ class StructuralBYOL(nn.Module):
         proj = self.online_predictor(enc)
         return enc, proj
 
+
 @register_model
 def register_structural_byol(opt_net, opt):
     subnet = create_model(opt, opt_net['subnet'])
     return StructuralBYOL(subnet, opt_net['image_size'], opt_net['hidden_layer'],
-                          pretrained_state_dict=opt_get(opt_net, ["pretrained_path"]),
+                          pretrained_state_dict=opt_get(
+                              opt_net, ["pretrained_path"]),
                           freeze_until=opt_get(opt_net, ['freeze_until'], 0))

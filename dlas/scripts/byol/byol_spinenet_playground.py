@@ -1,22 +1,20 @@
 import os
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 from PIL import Image
 from torch.utils.data import DataLoader
-from torchvision.transforms import ToTensor, Resize
+from torchvision.transforms import Resize, ToTensor
 from tqdm import tqdm
-import numpy as np
 
-from data.images.image_folder_dataset import ImageFolderDataset
-from models.image_latents.spinenet_arch import SpineNet
-
-
+from dlas.data.images.image_folder_dataset import ImageFolderDataset
+from dlas.models.image_latents.spinenet_arch import SpineNet
 # Computes the structural euclidean distance between [x,y]. "Structural" here means the [h,w] dimensions are preserved
 # and the distance is computed across the channel dimension.
-from utils.options import dict_to_nonedict
+from dlas.utils.options import dict_to_nonedict
 
 
 def structural_euc_dist(x, y):
@@ -28,7 +26,8 @@ def structural_euc_dist(x, y):
 def cosine_similarity(x, y):
     x = norm(x)
     y = norm(y)
-    return -nn.CosineSimilarity()(x, y)   # probably better to just use this class to perform the calc. Just left this here to remind myself.
+    # probably better to just use this class to perform the calc. Just left this here to remind myself.
+    return -nn.CosineSimilarity()(x, y)
 
 
 def key_value_difference(x, y):
@@ -44,7 +43,7 @@ def norm(x):
 
 
 def im_norm(x):
-    return (((x - torch.mean(x, dim=(2,3)).reshape(-1,1,1,1)) / torch.std(x, dim=(2,3)).reshape(-1,1,1,1)) * .5) + .5
+    return (((x - torch.mean(x, dim=(2, 3)).reshape(-1, 1, 1, 1)) / torch.std(x, dim=(2, 3)).reshape(-1, 1, 1, 1)) * .5) + .5
 
 
 def get_image_folder_dataloader(batch_size, num_workers):
@@ -81,18 +80,21 @@ def create_latent_database(model, model_index=0, batch_size=8):
             latent_dict[id] = latent[b].detach().cpu()
             if (id+1) % 1000 == 0:
                 print("Saving checkpoint..")
-                torch.save(latent_dict, os.path.join(output_path, "latent_dict_%i.pth" % (dict_count,)))
+                torch.save(latent_dict, os.path.join(
+                    output_path, "latent_dict_%i.pth" % (dict_count,)))
                 latent_dict = {}
-                torch.save(all_paths, os.path.join(output_path, "all_paths.pth"))
+                torch.save(all_paths, os.path.join(
+                    output_path, "all_paths.pth"))
                 dict_count += 1
             id += 1
 
 
 def _get_mins_from_comparables(latent, comparables, batch_size, compare_fn):
     _, c, h, w = latent.shape
-    clat = latent.reshape(1,-1,h*w).permute(2,0,1)
+    clat = latent.reshape(1, -1, h*w).permute(2, 0, 1)
     cpbl_chunked = torch.chunk(comparables, len(comparables) // batch_size)
-    assert len(comparables) % batch_size == 0   # The reconstruction logic doesn't work if this is not the case.
+    # The reconstruction logic doesn't work if this is not the case.
+    assert len(comparables) % batch_size == 0
     mins = []
     min_offsets = []
     for cpbl_chunk in tqdm(cpbl_chunked):
@@ -113,7 +115,8 @@ def _get_mins_from_comparables(latent, comparables, batch_size, compare_fn):
 def _get_mins_from_latent_dictionary(latent, hq_img_repo, ld_file_name, batch_size, compare_fn):
     _, c, h, w = latent.shape
     lat_dict = torch.load(os.path.join(hq_img_repo, ld_file_name))
-    comparables = torch.stack(list(lat_dict.values()), dim=0).permute(0,2,3,1)
+    comparables = torch.stack(list(lat_dict.values()),
+                              dim=0).permute(0, 2, 3, 1)
     cbl_shape = comparables.shape[:3]
     comparables = comparables.reshape(-1, c)
     return _get_mins_from_comparables(latent, comparables, batch_size, compare_fn)
@@ -121,7 +124,7 @@ def _get_mins_from_latent_dictionary(latent, hq_img_repo, ld_file_name, batch_si
 
 def find_similar_latents(model, model_index=0, lat_patch_size=16, compare_fn=structural_euc_dist):
     img = 'F:\\4k6k\\datasets\\ns_images\\adrianna\\analyze\\analyze_xx\\adrianna_xx.jpg'
-    #img = 'F:\\4k6k\\datasets\\ns_images\\adrianna\\analyze\\analyze_xx\\nicky_xx.jpg'
+    # img = 'F:\\4k6k\\datasets\\ns_images\\adrianna\\analyze\\analyze_xx\\nicky_xx.jpg'
     hq_img_repo = '../results/byol_latents'
     output_path = '../results/byol_similars'
     batch_size = 4096
@@ -141,8 +144,9 @@ def find_similar_latents(model, model_index=0, lat_patch_size=16, compare_fn=str
 
     mins, min_offsets = [], []
     total_latents = -1
-    for d_id in range(1,num_maps+1):
-        mn, of, tl = _get_mins_from_latent_dictionary(latent, hq_img_repo, "latent_dict_%i.pth" % (d_id), batch_size, compare_fn)
+    for d_id in range(1, num_maps+1):
+        mn, of, tl = _get_mins_from_latent_dictionary(
+            latent, hq_img_repo, "latent_dict_%i.pth" % (d_id), batch_size, compare_fn)
         if total_latents != -1:
             assert total_latents == tl
         else:
@@ -165,7 +169,8 @@ def find_similar_latents(model, model_index=0, lat_patch_size=16, compare_fn=str
     img_map_areas = []
     img_out = torch.zeros((1, 3, h * lat_patch_size, w * lat_patch_size))
     for i, ind in enumerate(tqdm(min_ids)):
-        u = np.unravel_index(ind.item(), (num_maps * total_latents // (lat_patch_mult ** 2), lat_patch_mult, lat_patch_mult))
+        u = np.unravel_index(ind.item(), (num_maps * total_latents //
+                             (lat_patch_mult ** 2), lat_patch_mult, lat_patch_mult))
         h_, w_ = np.unravel_index(i, (h, w))
 
         img = ToTensor()(Resize((512, 512))(Image.open(img_bank_paths[u[0]])))
@@ -174,21 +179,25 @@ def find_similar_latents(model, model_index=0, lat_patch_size=16, compare_fn=str
         patch = img[:, t:t + lat_patch_size, l:l + lat_patch_size]
         io_loc_t = h_ * lat_patch_size
         io_loc_l = w_ * lat_patch_size
-        img_out[:,:,io_loc_t:io_loc_t+lat_patch_size,io_loc_l:io_loc_l+lat_patch_size] = patch
+        img_out[:, :, io_loc_t:io_loc_t+lat_patch_size,
+                io_loc_l:io_loc_l+lat_patch_size] = patch
 
         # Also save the image with a masked map
         mask = torch.full_like(img, fill_value=.3)
         mask[:, t:t + lat_patch_size, l:l + lat_patch_size] = 1
         masked_img = img * mask
-        masked_src_img_output_file = os.path.join(output_path, "%i_%i__%i.png" % (io_loc_t, io_loc_l, u[0]))
+        masked_src_img_output_file = os.path.join(
+            output_path, "%i_%i__%i.png" % (io_loc_t, io_loc_l, u[0]))
         torchvision.utils.save_image(masked_img, masked_src_img_output_file)
 
         # Update the image map areas.
         img_map_areas.append('<area shape="rect" coords="%i,%i,%i,%i" href="%s">' % (io_loc_l, io_loc_t,
                                                                                      io_loc_l + lat_patch_size, io_loc_t + lat_patch_size,
                                                                                      masked_src_img_output_file))
-    torchvision.utils.save_image(img_out, os.path.join(output_path, "output.png"))
-    torchvision.utils.save_image(img_t, os.path.join(output_path, "source.png"))
+    torchvision.utils.save_image(
+        img_out, os.path.join(output_path, "output.png"))
+    torchvision.utils.save_image(
+        img_t, os.path.join(output_path, "source.png"))
     doc_out = doc_out % ('\n'.join(img_map_areas))
     with open(os.path.join(output_path, 'map.html'), 'w') as f:
         print(doc_out, file=f)
@@ -204,7 +213,8 @@ def explore_latent_results(model):
     id = 0
     for batch in tqdm(dataloader):
         hq = batch['hq'].to('cuda')
-        latent = model(hq)[1]   # BYOL trainer only trains the '4' output, which is indexed at [1]. Confusing.
+        # BYOL trainer only trains the '4' output, which is indexed at [1]. Confusing.
+        latent = model(hq)[1]
         # This operation works by computing the distance of every structural index from the center and using that
         # as a "heatmap".
         b, c, h, w = latent.shape
@@ -212,7 +222,8 @@ def explore_latent_results(model):
         centers = center.repeat(1, 1, h, w)
         dist = cosine_similarity(latent, centers).unsqueeze(1)
         dist = im_norm(dist)
-        torchvision.utils.save_image(dist, os.path.join(output_path, "%i.png" % id))
+        torchvision.utils.save_image(
+            dist, os.path.join(output_path, "%i.png" % id))
         id += 1
 
 
@@ -231,15 +242,16 @@ if __name__ == '__main__':
     model.load_state_dict(torch.load(pretrained_path), strict=True)
     model.eval()
 
-    #util.loaded_options = {'checkpointing_enabled': True}
-    #pretrained_path = '../../experiments/train_sbyol_512unsupervised_restart/models/48000_generator.pth'
-    #from models.byol.byol_structural import StructuralBYOL
-    #subnet = SpineNet('49', in_channels=3, use_input_norm=True).to('cuda')
-    #model = StructuralBYOL(subnet, image_size=256, hidden_layer='endpoint_convs.4.conv')
-    #model.load_state_dict(torch.load(pretrained_path), strict=True)
-    #model = BYOLModelWrapper(model)
-    #model.eval()
+    # util.loaded_options = {'checkpointing_enabled': True}
+    # pretrained_path = '../../experiments/train_sbyol_512unsupervised_restart/models/48000_generator.pth'
+    # from models.byol.byol_structural import StructuralBYOL
+    # subnet = SpineNet('49', in_channels=3, use_input_norm=True).to('cuda')
+    # model = StructuralBYOL(subnet, image_size=256, hidden_layer='endpoint_convs.4.conv')
+    # model.load_state_dict(torch.load(pretrained_path), strict=True)
+    # model = BYOLModelWrapper(model)
+    # model.eval()
 
     with torch.no_grad():
-        #create_latent_database(model, 1)    # 0 = model output dimension to use for latent storage
-        find_similar_latents(model, 1, 16, structural_euc_dist)  # 1 = model output dimension to use for latent predictor.
+        # create_latent_database(model, 1)    # 0 = model output dimension to use for latent storage
+        # 1 = model output dimension to use for latent predictor.
+        find_similar_latents(model, 1, 16, structural_euc_dist)

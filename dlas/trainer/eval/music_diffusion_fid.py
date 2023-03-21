@@ -1,5 +1,4 @@
 import os
-import os
 import os.path as osp
 from glob import glob
 
@@ -12,16 +11,18 @@ from pytorch_fid.fid_score import calculate_frechet_distance
 from torch import distributed
 from tqdm import tqdm
 
-import trainer.eval.evaluator as evaluator
-from data.audio.unsupervised_audio_dataset import load_audio
-from models.clip.contrastive_audio import ContrastiveAudio
-from models.diffusion.gaussian_diffusion import get_named_beta_schedule
-from models.diffusion.respace import space_timesteps, SpacedDiffusion
-from trainer.injectors.audio_injectors import denormalize_torch_mel, TorchMelSpectrogramInjector, pixel_shuffle_1d, \
-    KmeansQuantizerInjector, normalize_torch_mel
-from utils.music_utils import get_music_codegen, get_cheater_decoder, get_cheater_encoder, \
-    get_mel2wav_v3_model, get_ar_prior
-from utils.util import opt_get, load_model_from_config
+import dlas.trainer.eval.evaluator as evaluator
+from dlas.data.audio.unsupervised_audio_dataset import load_audio
+from dlas.models.clip.contrastive_audio import ContrastiveAudio
+from dlas.models.diffusion.gaussian_diffusion import get_named_beta_schedule
+from dlas.models.diffusion.respace import SpacedDiffusion, space_timesteps
+from dlas.trainer.injectors.audio_injectors import (
+    KmeansQuantizerInjector, TorchMelSpectrogramInjector,
+    denormalize_torch_mel, normalize_torch_mel, pixel_shuffle_1d)
+from dlas.utils.music_utils import (get_ar_prior, get_cheater_decoder,
+                                    get_cheater_encoder, get_mel2wav_v3_model,
+                                    get_music_codegen)
+from dlas.utils.util import load_model_from_config, opt_get
 
 
 class MusicDiffusionFid(evaluator.Evaluator):
@@ -356,4 +357,3 @@ if __name__ == '__main__':
         print(res)
         fds.append(res['frechet_distance'])
     print(fds)
-

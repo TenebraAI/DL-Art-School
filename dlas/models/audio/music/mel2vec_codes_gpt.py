@@ -1,11 +1,11 @@
 import torch
-from torch import nn
 import torch.nn.functional as F
-import torch_intermediary as ml
+from torch import nn
 from transformers import GPT2Config, GPT2Model
 
-from trainer.networks import register_model
-from utils.util import opt_get
+import dlas.torch_intermediary as ml
+from dlas.trainer.networks import register_model
+from dlas.utils.util import opt_get
 
 
 class Mel2VecCodesGpt(nn.Module):
@@ -19,8 +19,10 @@ class Mel2VecCodesGpt(nn.Module):
         self.gpt = GPT2Model(self.config)
         del self.gpt.wte  # Unused, we'll do our own embeddings.
         # nn.Embedding
-        self.embeddings = nn.ModuleList([ml.Embedding(num_vectors, dim//num_groups) for _ in range(num_groups)])
-        self.heads = nn.ModuleList([ml.Linear(dim, num_vectors) for _ in range(num_groups)])
+        self.embeddings = nn.ModuleList(
+            [ml.Embedding(num_vectors, dim//num_groups) for _ in range(num_groups)])
+        self.heads = nn.ModuleList(
+            [ml.Linear(dim, num_vectors) for _ in range(num_groups)])
 
     def forward(self, codes):
         assert codes.shape[-1] == self.num_groups
@@ -28,14 +30,15 @@ class Mel2VecCodesGpt(nn.Module):
         inputs = codes[:, :-1]
         targets = codes[:, 1:]
 
-        h = [embedding(inputs[:, :, i]) for i, embedding in enumerate(self.embeddings)]
+        h = [embedding(inputs[:, :, i])
+             for i, embedding in enumerate(self.embeddings)]
         h = torch.cat(h, dim=-1)
         h = self.gpt(inputs_embeds=h, return_dict=True).last_hidden_state
 
         losses = 0
         for i, head in enumerate(self.heads):
-            logits = head(h).permute(0,2,1)
-            loss = F.cross_entropy(logits, targets[:,:,i])
+            logits = head(h).permute(0, 2, 1)
+            loss = F.cross_entropy(logits, targets[:, :, i])
             losses = losses + loss
 
         return losses / self.num_groups
@@ -48,5 +51,5 @@ def register_music_gpt(opt_net, opt):
 
 if __name__ == '__main__':
     model = Mel2VecCodesGpt(512, 8)
-    codes = torch.randint(0,8, (2,300,8))
+    codes = torch.randint(0, 8, (2, 300, 8))
     model(codes)

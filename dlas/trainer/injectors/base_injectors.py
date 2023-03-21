@@ -4,10 +4,10 @@ import torch.nn
 from kornia.augmentation import RandomResizedCrop
 from torch.cuda.amp import autocast
 
-from trainer.inject import Injector, create_injector
-from trainer.losses import extract_params_from_state
-from utils.util import opt_get
-from utils.weight_scheduler import get_scheduler_for_opt
+from dlas.trainer.inject import Injector, create_injector
+from dlas.trainer.losses import extract_params_from_state
+from dlas.utils.util import opt_get
+from dlas.utils.weight_scheduler import get_scheduler_for_opt
 
 
 # Transfers the state in the input key to the output key
@@ -73,7 +73,8 @@ class GeneratorInjector(Injector):
     def __init__(self, opt, env):
         super(GeneratorInjector, self).__init__(opt, env)
         self.grad = opt['grad'] if 'grad' in opt.keys() else True
-        self.method = opt_get(opt, ['method'], None)  # If specified, this method is called instead of __call__()
+        # If specified, this method is called instead of __call__()
+        self.method = opt_get(opt, ['method'], None)
         self.args = opt_get(opt, ['args'], {})
         self.fp16_override = opt_get(opt, ['fp16'], True)
 
@@ -165,7 +166,8 @@ class AddNoiseInjector(Injector):
         if self.mode == 'normal':
             noise = torch.randn_like(ref) * scale
         elif self.mode == 'uniform':
-            noise = torch.FloatTensor(ref.shape).uniform_(0.0, scale).to(ref.device)
+            noise = torch.FloatTensor(ref.shape).uniform_(
+                0.0, scale).to(ref.device)
         return {self.opt['out']: state[self.opt['in']] + noise}
 
 
@@ -232,7 +234,8 @@ class ImagePatchInjector(Injector):
         if self.resize is not None:
             res2 = {}
             for k, v in res.items():
-                res2[k] = torch.nn.functional.interpolate(v, size=(self.resize, self.resize), mode="nearest")
+                res2[k] = torch.nn.functional.interpolate(
+                    v, size=(self.resize, self.resize), mode="nearest")
             res = res2
         return res
 
@@ -253,7 +256,8 @@ class MarginRemoval(Injector):
     def __init__(self, opt, env):
         super(MarginRemoval, self).__init__(opt, env)
         self.margin = opt['margin']
-        self.random_shift_max = opt['random_shift_max'] if 'random_shift_max' in opt.keys() else 0
+        self.random_shift_max = opt['random_shift_max'] if 'random_shift_max' in opt.keys(
+        ) else 0
 
     def forward(self, state):
         input = state[self.input]
@@ -261,14 +265,16 @@ class MarginRemoval(Injector):
             output = []
             # This is a really shitty way of doing this. If it works at all, I should reconsider using Resample2D, for example.
             for b in range(input.shape[0]):
-                shiftleft = random.randint(-self.random_shift_max, self.random_shift_max)
-                shifttop = random.randint(-self.random_shift_max, self.random_shift_max)
+                shiftleft = random.randint(-self.random_shift_max,
+                                           self.random_shift_max)
+                shifttop = random.randint(-self.random_shift_max,
+                                          self.random_shift_max)
                 output.append(input[b, :, self.margin + shiftleft:-(self.margin - shiftleft),
                               self.margin + shifttop:-(self.margin - shifttop)])
             output = torch.stack(output, dim=0)
         else:
             output = input[:, :, self.margin:-self.margin,
-                     self.margin:-self.margin]
+                           self.margin:-self.margin]
 
         return {self.opt['out']: output}
 
@@ -301,7 +307,8 @@ class ConstantInjector(Injector):
     def __init__(self, opt, env):
         super(ConstantInjector, self).__init__(opt, env)
         self.constant_type = opt['constant_type']
-        self.like = opt['like']  # This injector uses this tensor to determine what batch size and device to use.
+        # This injector uses this tensor to determine what batch size and device to use.
+        self.like = opt['like']
 
     def forward(self, state):
         like = state[self.like]
@@ -316,7 +323,8 @@ class IndicesExtractor(Injector):
     def __init__(self, opt, env):
         super(IndicesExtractor, self).__init__(opt, env)
         self.dim = opt['dim']
-        assert self.dim == 1  # Honestly not sure how to support an abstract dim here, so just add yours when needed.
+        # Honestly not sure how to support an abstract dim here, so just add yours when needed.
+        assert self.dim == 1
 
     def forward(self, state):
         results = {}
@@ -398,7 +406,8 @@ class MultiFrameCombiner(Injector):
                 if i == center:
                     continue
                 nimg = lq[:, i, :, :, :]
-                flowfield = flow(torch.stack([center_img, nimg], dim=2).float())
+                flowfield = flow(torch.stack(
+                    [center_img, nimg], dim=2).float())
                 nimg = self.resampler(nimg, flowfield)
                 imgs.append(nimg)
         hq_out = hq[:, center, :, :, :]
@@ -432,7 +441,8 @@ class MixAndLabelInjector(Injector):
         input_tensors = [state[i] for i in self.input]
         num_inputs = len(input_tensors)
         bs = input_tensors[0].shape[0]
-        labels = torch.randint(0, num_inputs, (bs,), device=input_tensors[0].device)
+        labels = torch.randint(0, num_inputs, (bs,),
+                               device=input_tensors[0].device)
         # Still don't know of a good way to do this in torch.. TODO make it better..
         res = []
         for b in range(bs):
@@ -450,7 +460,8 @@ class RandomCropInjector(Injector):
         dim_out = opt['dim_out']
         scale = dim_out / dim_in
         self.operator = RandomResizedCrop(size=(dim_out, dim_out), scale=(scale, 1),
-                                          ratio=(.99,1),  # An aspect ratio range is required, but .99,1 is effectively "none".
+                                          # An aspect ratio range is required, but .99,1 is effectively "none".
+                                          ratio=(.99, 1),
                                           resample='NEAREST')
 
     def forward(self, state):
@@ -502,7 +513,8 @@ class DecomposeDimensionInjector(Injector):
         # Compute the reverse permutation and shape arguments needed to undo this operation.
         rev_shape = [inp.shape[self.dim]] + shape.copy()
         rev_permute = list(range(len(inp.shape)))[1:]  # Looks like [1,2,3]
-        rev_permute = rev_permute[:self.dim] + [0] + (rev_permute[self.dim:] if self.dim < len(rev_permute) else [])
+        rev_permute = rev_permute[:self.dim] + [0] + \
+            (rev_permute[self.dim:] if self.dim < len(rev_permute) else [])
 
         out = inp.permute([self.dim] + dims).reshape((-1,) + tuple(shape[1:]))
         if self.cutoff_dim > -1:
@@ -547,8 +559,8 @@ class FrequencyBinNormalizeInjector(Injector):
     def __init__(self, opt, env):
         super().__init__(opt, env)
         self.shift, self.scale = torch.load(opt['stats_file'])
-        self.shift = self.shift.view(1,-1,1)
-        self.scale = self.scale.view(1,-1,1)
+        self.shift = self.shift.view(1, -1, 1)
+        self.scale = self.scale.view(1, -1, 1)
 
     def forward(self, state):
         inp = state[self.input]

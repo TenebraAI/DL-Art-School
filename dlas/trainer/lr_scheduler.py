@@ -1,11 +1,12 @@
 import math
-from collections import Counter
-from collections import defaultdict
+from collections import Counter, defaultdict
+
 import torch
 from torch.optim.lr_scheduler import _LRScheduler
-import torch_intermediary as ml
 
-from utils.util import opt_get
+import dlas.torch_intermediary as ml
+from dlas.utils.util import opt_get
+
 
 def get_scheduler_for_name(name, optimizers, scheduler_opt):
     schedulers = []
@@ -16,20 +17,20 @@ def get_scheduler_for_name(name, optimizers, scheduler_opt):
 
         if name == 'MultiStepLR':
             sched = MultiStepLR_Restart(o, scheduler_opt['gen_lr_steps'],
-                                             restarts=scheduler_opt['restarts'],
-                                             weights=scheduler_opt['restart_weights'],
-                                             gamma=scheduler_opt['lr_gamma'],
-                                             clear_state=scheduler_opt['clear_state'],
-                                             force_lr=scheduler_opt['force_lr'],
-                                             warmup_steps=opt_get(scheduler_opt, ['warmup_steps'], 0))
+                                        restarts=scheduler_opt['restarts'],
+                                        weights=scheduler_opt['restart_weights'],
+                                        gamma=scheduler_opt['lr_gamma'],
+                                        clear_state=scheduler_opt['clear_state'],
+                                        force_lr=scheduler_opt['force_lr'],
+                                        warmup_steps=opt_get(scheduler_opt, ['warmup_steps'], 0))
         elif name == 'ProgressiveMultiStepLR':
             sched = ProgressiveMultiStepLR(o, scheduler_opt['gen_lr_steps'],
-                                             scheduler_opt['progressive_starts'],
-                                             scheduler_opt['lr_gamma'])
+                                           scheduler_opt['progressive_starts'],
+                                           scheduler_opt['lr_gamma'])
         elif name == 'CosineAnnealingLR_Restart':
             sched = CosineAnnealingLR_Restart(
-                        o, scheduler_opt['T_period'], scheduler_opt['warmup'], eta_min=scheduler_opt['eta_min'],
-                        restarts=scheduler_opt['restarts'], weights=scheduler_opt['restart_weights'])
+                o, scheduler_opt['T_period'], scheduler_opt['warmup'], eta_min=scheduler_opt['eta_min'],
+                restarts=scheduler_opt['restarts'], weights=scheduler_opt['restart_weights'])
         else:
             raise NotImplementedError('Scheduler not available')
         schedulers.append(sched)
@@ -83,7 +84,8 @@ class MultiStepLR_Restart(_LRScheduler):
             weight = self.restart_weights[self.restarts.index(self.last_epoch)]
             return [group['initial_lr'] * weight for group in self.optimizer.param_groups]
         if self.last_epoch < self.warmup_steps:
-            factor = 1 - (self.warmup_steps - self.last_epoch) / self.warmup_steps
+            factor = 1 - (self.warmup_steps - self.last_epoch) / \
+                self.warmup_steps
             return [group['initial_lr'] * factor for group in self.optimizer.param_groups]
         if self.last_epoch not in self.milestones:
             return [group['lr'] for group in self.optimizer.param_groups]
@@ -126,7 +128,8 @@ class CosineAnnealingLR_Restart(_LRScheduler):
             return [group['initial_lr'] * weight for group in self.optimizer.param_groups]
         elif (step - self.last_restart - 1 - self.T_max) % (2 * self.T_max) == 0:
             return [
-                group['lr'] + (base_lr - self.eta_min) * (1 - math.cos(math.pi / self.T_max)) / 2
+                group['lr'] + (base_lr - self.eta_min) *
+                (1 - math.cos(math.pi / self.T_max)) / 2
                 for base_lr, group in zip(self.base_lrs, self.optimizer.param_groups)
             ]
         return [(1 + math.cos(math.pi * (step - self.last_restart) / self.T_max)) /
@@ -136,23 +139,24 @@ class CosineAnnealingLR_Restart(_LRScheduler):
 
 
 if __name__ == "__main__":
-    #torch.optim.Adam
+    # torch.optim.Adam
     optimizer = ml.Adam([torch.zeros(3, 64, 3, 3)], lr=1e-4, weight_decay=0,
-                                 betas=(0.9, 0.99))
+                        betas=(0.9, 0.99))
     ##############################
     # MultiStepLR_Restart
     ##############################
-    ## Original
+    # Original
     lr_steps = [200000, 400000, 600000, 800000]
     restarts = None
     restart_weights = None
 
-    ## two
-    lr_steps = [100000, 200000, 300000, 400000, 490000, 600000, 700000, 800000, 900000, 990000]
+    # two
+    lr_steps = [100000, 200000, 300000, 400000,
+                490000, 600000, 700000, 800000, 900000, 990000]
     restarts = [500000]
     restart_weights = [1]
 
-    ## four
+    # four
     lr_steps = [
         50000, 100000, 150000, 200000, 240000, 300000, 350000, 400000, 450000, 490000, 550000,
         600000, 650000, 700000, 740000, 800000, 850000, 900000, 950000, 990000
@@ -191,8 +195,8 @@ if __name__ == "__main__":
         lr_l[i] = current_lr
 
     import matplotlib as mpl
-    from matplotlib import pyplot as plt
     import matplotlib.ticker as mtick
+    from matplotlib import pyplot as plt
     mpl.style.use('default')
     import seaborn
     seaborn.set(style='whitegrid')
@@ -202,7 +206,8 @@ if __name__ == "__main__":
     plt.subplot(111)
     plt.ticklabel_format(style='sci', axis='x', scilimits=(0, 0))
     plt.title('Title', fontsize=16, color='k')
-    plt.plot(list(range(N_iter)), lr_l, linewidth=1.5, label='learning rate scheme')
+    plt.plot(list(range(N_iter)), lr_l, linewidth=1.5,
+             label='learning rate scheme')
     legend = plt.legend(loc='upper right', shadow=False)
     ax = plt.gca()
     labels = ax.get_xticks().tolist()

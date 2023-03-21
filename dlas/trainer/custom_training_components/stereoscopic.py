@@ -1,8 +1,9 @@
 import torch
-from torch.cuda.amp import autocast
-from models.flownet2.networks import Resample2d
 from models.flownet2 import flow2img
-from trainer.inject import Injector
+from models.flownet2.networks import Resample2d
+from torch.cuda.amp import autocast
+
+from dlas.trainer.inject import Injector
 
 
 def create_stereoscopic_injector(opt, env):
@@ -36,11 +37,13 @@ class Flow2Image(Injector):
         with torch.no_grad():
             flo = state[self.input].cpu()
             bs, c, h, w = flo.shape
-            flo = flo.permute(0, 2, 3, 1)  # flow2img works in numpy space for some reason..
+            # flow2img works in numpy space for some reason..
+            flo = flo.permute(0, 2, 3, 1)
             imgs = torch.empty_like(flo)
             flo = flo.numpy()
             for b in range(bs):
-                img = flow2img(flo[b])  # Note that this returns the image in an integer format.
+                # Note that this returns the image in an integer format.
+                img = flow2img(flo[b])
                 img = torch.tensor(img, dtype=torch.float) / 255
                 imgs[b] = img
             imgs = imgs.permute(0, 3, 1, 2)

@@ -1,9 +1,12 @@
-import os
-import os.path as osp
 import logging
+import os.path as osp
+
 import yaml
-from utils.util import OrderedYaml
+
+from dlas.utils.util import OrderedYaml
+
 Loader, Dumper = OrderedYaml()
+
 
 def parse(opt_path, is_train=True):
     with open(opt_path, mode='r') as f:
@@ -41,10 +44,12 @@ def parse(opt_path, is_train=True):
         opt['path'] = {}
     opt['path']['root'] = "./"
     if is_train:
-        experiments_root = osp.join(opt['path']['root'], 'training', opt['name'], "finetune")
+        experiments_root = osp.join(
+            opt['path']['root'], 'training', opt['name'], "finetune")
         opt['path']['experiments_root'] = experiments_root
         opt['path']['models'] = osp.join(experiments_root, 'models')
-        opt['path']['training_state'] = osp.join(experiments_root, 'training_state')
+        opt['path']['training_state'] = osp.join(
+            experiments_root, 'training_state')
         opt['path']['log'] = experiments_root
         opt['path']['val_images'] = osp.join(experiments_root, 'val_images')
 
@@ -98,7 +103,8 @@ def check_resume(opt, resume_iter):
     if opt['path']['resume_state']:
         if opt['path'].get('pretrain_model_G', None) is not None or opt['path'].get(
                 'pretrain_model_D', None) is not None:
-            logger.warning('pretrain_model path will be ignored when resuming training.')
+            logger.warning(
+                'pretrain_model path will be ignored when resuming training.')
 
         # Automatically fill in the network paths for a given resume iteration.
         for k in opt['networks'].keys():
@@ -106,16 +112,26 @@ def check_resume(opt, resume_iter):
             if pt_key in opt['path'].keys():
                 # This is a dicey, error prone situation that has bitten me in both ways it can be handled. Opt for
                 # a big, verbose error message.
-                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                print("!!!!!!!!!!!!!!WARNING!! YOU SPECIFIED A PRETRAINED MODEL PATH!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                print("!!!!!!!!!!!!!!!!!!!!!!!!AND A RESUME STATE PATH. THERE IS NO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                print("!!!!!!!!!!!!!!!!!!!!!!!!GOOD WAY TO HANDLE THIS SO WE JUST IGNORE!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                print("!!!!!!!!!!!!!!!!!!!!!!!!THE MODEL PATH!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print(
+                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print(
+                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print(
+                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print(
+                    "!!!!!!!!!!!!!!WARNING!! YOU SPECIFIED A PRETRAINED MODEL PATH!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print(
+                    "!!!!!!!!!!!!!!!!!!!!!!!!AND A RESUME STATE PATH. THERE IS NO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print(
+                    "!!!!!!!!!!!!!!!!!!!!!!!!GOOD WAY TO HANDLE THIS SO WE JUST IGNORE!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print(
+                    "!!!!!!!!!!!!!!!!!!!!!!!!THE MODEL PATH!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print(
+                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print(
+                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print(
+                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             opt['path'][pt_key] = osp.join(opt['path']['models'],
-                                      '{}_{}.pth'.format(resume_iter, k))
+                                           '{}_{}.pth'.format(resume_iter, k))
             logger.info('Set model [%s] to %s' % (k, opt['path'][pt_key]))

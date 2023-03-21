@@ -1,12 +1,13 @@
 import os
 from collections import OrderedDict
+
 import torch
 import torch.nn as nn
 from torch.distributed.optim import ZeroRedundancyOptimizer
 from torch.nn.parallel.distributed import DistributedDataParallel
 
-import utils.util
-from utils.util import opt_get, optimizer_to, map_to_device
+from dlas.utils.util import (copy_files_to_server, map_cuda_to_correct_device,
+                             map_to_device, opt_get, optimizer_to)
 
 
 class BaseModel():
@@ -16,7 +17,8 @@ class BaseModel():
             self.rank = torch.distributed.get_rank()
         else:
             self.rank = -1  # non dist training
-        self.device = torch.cuda.current_device() if opt['gpu_ids'] else torch.device('cpu')
+        self.device = torch.cuda.current_device(
+        ) if opt['gpu_ids'] else torch.device('cpu')
         self.amp_level = 'O0' if opt['amp_opt_level'] is None else opt['amp_opt_level']
         self.is_train = opt['is_train']
         self.opt_in_cpu = opt_get(opt, ['keep_optimizer_states_on_cpu'], False)
@@ -57,7 +59,8 @@ class BaseModel():
         """Get the initial lr, which is set by the scheduler"""
         init_lr_groups_l = []
         for optimizer in self.optimizers:
-            init_lr_groups_l.append([v['initial_lr'] for v in optimizer.param_groups])
+            init_lr_groups_l.append([v['initial_lr']
+                                    for v in optimizer.param_groups])
         return init_lr_groups_l
 
     def update_learning_rate(self, cur_iter, warmup_iter=-1):
@@ -71,7 +74,8 @@ class BaseModel():
             # modify warming-up learning rates
             warm_up_lr_l = []
             for init_lr_g in init_lr_g_l:
-                warm_up_lr_l.append([v / warmup_iter * cur_iter for v in init_lr_g])
+                warm_up_lr_l.append(
+                    [v / warmup_iter * cur_iter for v in init_lr_g])
             # set learning rate
             self._set_lr(warm_up_lr_l)
 
@@ -99,17 +103,19 @@ class BaseModel():
 
         # Also save to the 'alt_path' which is useful for caching to Google Drive in colab, for example.
         if 'alt_path' in self.opt['path'].keys():
-            torch.save(state_dict, os.path.join(self.opt['path']['alt_path'], save_filename))
+            torch.save(state_dict, os.path.join(
+                self.opt['path']['alt_path'], save_filename))
         if self.opt['colab_mode']:
-            utils.util.copy_files_to_server(self.opt['ssh_server'], self.opt['ssh_username'], self.opt['ssh_password'],
-                                            save_path, os.path.join(self.opt['remote_path'], 'models', save_filename))
+            copy_files_to_server(self.opt['ssh_server'], self.opt['ssh_username'], self.opt['ssh_password'],
+                                 save_path, os.path.join(self.opt['remote_path'], 'models', save_filename))
         return save_path
 
     def load_network(self, load_path, network, strict=True, pretrain_base_path=None):
         # Sometimes networks are passed in as DDP modules, we want the raw parameters.
         if hasattr(network, 'module'):
             network = network.module
-        load_net = torch.load(load_path, map_location=utils.util.map_cuda_to_correct_device)
+        load_net = torch.load(
+            load_path, map_location=map_cuda_to_correct_device)
 
         # Support loading torch.save()s for whole models as well as just state_dicts.
         if 'state_dict' in load_net:
@@ -130,12 +136,10 @@ class BaseModel():
                 load_net_clean[k] = v
         network.load_state_dict(load_net_clean, strict=strict)
 
-
     def consolidate_state(self):
         for o in self.optimizers:
             if isinstance(o, ZeroRedundancyOptimizer):
                 o.consolidate_state_dict(to=0)
-
 
     def save_training_state(self, state):
         """Save training state during training, which will be used for resuming"""
@@ -146,8 +150,10 @@ class BaseModel():
             state['optimizers'].append(o.state_dict())
         if 'amp_opt_level' in self.opt.keys():
             state['amp'] = amp.state_dict()
-        save_filename = '{}.state'.format(utils.util.opt_get(state, ['iter'], 'no_step_provided'))
-        save_path = os.path.join(self.opt['path']['training_state'], save_filename)
+        save_filename = '{}.state'.format(
+            opt_get(state, ['iter'], 'no_step_provided'))
+        save_path = os.path.join(
+            self.opt['path']['training_state'], save_filename)
         torch.save(map_to_device(state, 'cpu'), save_path)
         if '__state__' not in self.save_history.keys():
             self.save_history['__state__'] = []
@@ -155,10 +161,11 @@ class BaseModel():
 
         # Also save to the 'alt_path' which is useful for caching to Google Drive in colab, for example.
         if 'alt_path' in self.opt['path'].keys():
-            torch.save(state, os.path.join(self.opt['path']['alt_path'], 'latest.state'))
+            torch.save(state, os.path.join(
+                self.opt['path']['alt_path'], 'latest.state'))
         if self.opt['colab_mode']:
-            utils.util.copy_files_to_server(self.opt['ssh_server'], self.opt['ssh_username'], self.opt['ssh_password'],
-                                            save_path, os.path.join(self.opt['remote_path'], 'training_state', save_filename))
+            copy_files_to_server(self.opt['ssh_server'], self.opt['ssh_username'], self.opt['ssh_password'],
+                                 save_path, os.path.join(self.opt['remote_path'], 'training_state', save_filename))
 
     def stash_optimizers(self):
         """
@@ -183,8 +190,10 @@ class BaseModel():
         """Resume the optimizers and schedulers for training"""
         resume_optimizers = resume_state['optimizers']
         resume_schedulers = resume_state['schedulers']
-        assert len(resume_optimizers) == len(self.optimizers), 'Wrong lengths of optimizers'
-        assert len(resume_schedulers) == len(self.schedulers), 'Wrong lengths of schedulers'
+        assert len(resume_optimizers) == len(
+            self.optimizers), 'Wrong lengths of optimizers'
+        assert len(resume_schedulers) == len(
+            self.schedulers), 'Wrong lengths of schedulers'
         for i, o in enumerate(resume_optimizers):
             self.optimizers[i].load_state_dict(o)
         for i, s in enumerate(resume_schedulers):

@@ -1,17 +1,19 @@
+from typing import (Any, Callable, Iterator, List, Optional, OrderedDict, Type,
+                    Union)
+
 import torch
+import torch.nn as nn
 import torchvision
 from torch import Tensor
-import torch.nn as nn
-from typing import Type, Any, Callable, Union, List, Optional, OrderedDict, Iterator
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152', 'resnext50_32x4d', 'resnext101_32x8d',
            'wide_resnet50_2', 'wide_resnet101_2']
 
-from models.vqvae.scaled_weight_conv import ScaledWeightConv
-from trainer.networks import register_model
-from utils.util import checkpoint
-import torch_intermediary as ml
+import dlas.torch_intermediary as ml
+from dlas.models.vqvae.scaled_weight_conv import ScaledWeightConv
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint
 
 model_urls = {
     'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
@@ -29,7 +31,7 @@ model_urls = {
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1, breadth: int = 8) -> ScaledWeightConv:
     """3x3 convolution with padding"""
     return ScaledWeightConv(in_planes, out_planes, kernel_size=3, stride=stride,
-                     padding=dilation, groups=groups, bias=False, dilation=dilation, breadth=breadth)
+                            padding=dilation, groups=groups, bias=False, dilation=dilation, breadth=breadth)
 
 
 def conv1x1(in_planes: int, out_planes: int, stride: int = 1, breadth: int = 8) -> ScaledWeightConv:
@@ -80,9 +82,11 @@ class BasicBlock(nn.Module):
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         if groups != 1 or base_width != 64:
-            raise ValueError('BasicBlock only supports groups=1 and base_width=64')
+            raise ValueError(
+                'BasicBlock only supports groups=1 and base_width=64')
         if dilation > 1:
-            raise NotImplementedError("Dilation > 1 not supported in BasicBlock")
+            raise NotImplementedError(
+                "Dilation > 1 not supported in BasicBlock")
         # Both self.conv1 and self.downsample layers downsample the input when stride != 1
         self.conv1 = conv3x3(inplanes, planes, stride, breadth=breadth)
         self.bn1 = norm_layer(planes)
@@ -139,7 +143,8 @@ class Bottleneck(nn.Module):
         # Both self.conv2 and self.downsample layers downsample the input when stride != 1
         self.conv1 = conv1x1(inplanes, width, breadth=breadth)
         self.bn1 = norm_layer(width)
-        self.conv2 = conv3x3(width, width, stride, groups, dilation, breadth=breadth)
+        self.conv2 = conv3x3(width, width, stride, groups,
+                             dilation, breadth=breadth)
         self.bn2 = norm_layer(width)
         self.conv3 = conv1x1(width, planes * self.expansion, breadth=breadth)
         self.bn3 = norm_layer(planes * self.expansion)
@@ -202,7 +207,7 @@ class ResNet(nn.Module):
         self.groups = groups
         self.base_width = width_per_group
         self.conv1 = ScaledWeightConv(3, self.inplanes, kernel_size=7, stride=2, padding=3,
-                               bias=False, breadth=breadth)
+                                      bias=False, breadth=breadth)
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -218,7 +223,8 @@ class ResNet(nn.Module):
 
         for m in self.modules():
             if isinstance(m, ScaledWeightConv):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(
+                    m.weight, mode='fan_out', nonlinearity='relu')
             elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
@@ -229,9 +235,11 @@ class ResNet(nn.Module):
         if zero_init_residual:
             for m in self.modules():
                 if isinstance(m, Bottleneck):
-                    nn.init.constant_(m.bn3.weight, 0)  # type: ignore[arg-type]
+                    # type: ignore[arg-type]
+                    nn.init.constant_(m.bn3.weight, 0)
                 elif isinstance(m, BasicBlock):
-                    nn.init.constant_(m.bn2.weight, 0)  # type: ignore[arg-type]
+                    # type: ignore[arg-type]
+                    nn.init.constant_(m.bn2.weight, 0)
 
     def _make_layer(self, block: Type[Union[BasicBlock, Bottleneck]], planes: int, blocks: int, breadth: int,
                     stride: int = 1, dilate: bool = False) -> MaskedSequential:
@@ -243,7 +251,8 @@ class ResNet(nn.Module):
             stride = 1
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = MaskedSequential(
-                conv1x1(self.inplanes, planes * block.expansion, stride, breadth=breadth),
+                conv1x1(self.inplanes, planes * block.expansion,
+                        stride, breadth=breadth),
                 norm_layer(planes * block.expansion),
             )
 
@@ -435,7 +444,7 @@ if __name__ == '__main__':
     masks = {}
     for j in range(6):
         cdim = idim // (2 ** j)
-        masks[cdim] = torch.zeros((1,1,cdim,cdim), dtype=torch.long)
-    i = torch.rand(1,3,idim,idim)
+        masks[cdim] = torch.zeros((1, 1, cdim, cdim), dtype=torch.long)
+    i = torch.rand(1, 3, idim, idim)
     r1 = mod(i, masks)
     r2 = orig(i)

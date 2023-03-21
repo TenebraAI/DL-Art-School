@@ -1,11 +1,10 @@
 from math import ceil
 
 import numpy as np
-
 from spleeter.audio.adapter import AudioAdapter
 from torch.utils.data import Dataset
 
-from data.util import find_audio_files
+from dlas.data.util import find_audio_files
 
 
 class SpleeterDataset(Dataset):
@@ -43,8 +42,9 @@ class SpleeterDataset(Dataset):
             if ind >= len(self.files):
                 break
 
-            #try:
-            wav, sr = self.loader.load(self.files[ind], sample_rate=self.sample_rate)
+            # try:
+            wav, sr = self.loader.load(
+                self.files[ind], sample_rate=self.sample_rate)
             assert sr == 22050
             # Get rid of all channels except one.
             if wav.shape[1] > 1:
@@ -56,7 +56,7 @@ class SpleeterDataset(Dataset):
                 wavs = np.concatenate([wavs, wav])
             ends.append(wavs.shape[0])
             files.append(self.files[ind])
-            #except:
+            # except:
             #    print(f'Error loading {self.files[ind]}')
         return {
             'audio': wavs,

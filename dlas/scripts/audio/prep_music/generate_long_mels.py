@@ -10,14 +10,14 @@ import os
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 
+import numpy as np
 import torch
 import torchaudio
-import numpy as np
 from tqdm import tqdm
 
-from data.util import find_audio_files, find_files_of_type
-from trainer.injectors.audio_injectors import TorchMelSpectrogramInjector
-from utils.util import load_audio
+from dlas.data.util import find_audio_files, find_files_of_type
+from dlas.trainer.injectors.audio_injectors import TorchMelSpectrogramInjector
+from dlas.utils.util import load_audio
 
 
 def report_progress(progress_file, file):
@@ -27,6 +27,7 @@ def report_progress(progress_file, file):
 
 spec_fn = TorchMelSpectrogramInjector({'n_mel_channels': 256, 'mel_fmax': 11000, 'filter_length': 16000,
                                        'true_normalization': True, 'normalize': True, 'in': 'in', 'out': 'out'}, {}).cuda()
+
 
 def produce_mel(audio):
     return spec_fn({'in': audio.unsqueeze(0)})['out'].squeeze(0)
@@ -68,11 +69,16 @@ def process_folder(folder, base_path, output_path, progress_file, max_duration, 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--path', type=str, help='Path to search for files', default='Y:\\separated')
-    parser.add_argument('--progress_file', type=str, help='Place to store all files that have already been processed', default='Y:\\separated\\large_mels\\already_processed.txt')
-    parser.add_argument('--output_path', type=str, help='Path for output files', default='Y:\\separated\\large_mels')
-    parser.add_argument('--num_threads', type=int, help='Number of concurrent workers processing files.', default=3)
-    parser.add_argument('--max_duration', type=int, help='Duration per clip in seconds', default=120)
+    parser.add_argument(
+        '--path', type=str, help='Path to search for files', default='Y:\\separated')
+    parser.add_argument('--progress_file', type=str, help='Place to store all files that have already been processed',
+                        default='Y:\\separated\\large_mels\\already_processed.txt')
+    parser.add_argument('--output_path', type=str,
+                        help='Path for output files', default='Y:\\separated\\large_mels')
+    parser.add_argument('--num_threads', type=int,
+                        help='Number of concurrent workers processing files.', default=3)
+    parser.add_argument('--max_duration', type=int,
+                        help='Duration per clip in seconds', default=120)
     args = parser.parse_args()
 
     os.makedirs(args.output_path, exist_ok=True)
@@ -87,6 +93,7 @@ if __name__ == '__main__':
         root_music_files = torch.load(cache_path)
     else:
         path = Path(args.path)
+
         def collect(p):
             return str(os.path.dirname(os.path.dirname(p)))
         root_music_files = {collect(p) for p in path.rglob("*no_vocals.wav")}

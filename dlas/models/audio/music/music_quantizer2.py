@@ -1,14 +1,14 @@
 import functools
 
 import torch
-from torch import nn
 import torch.nn.functional as F
-import torch_intermediary as ml
+from torch import nn
 
-from models.arch_util import zero_module
-from models.vqvae.vqvae import Quantize
-from trainer.networks import register_model
-from utils.util import checkpoint, ceil_multiple, print_network
+import dlas.torch_intermediary as ml
+from dlas.models.arch_util import zero_module
+from dlas.models.vqvae.vqvae import Quantize
+from dlas.trainer.networks import register_model
+from dlas.utils.util import ceil_multiple, checkpoint, print_network
 
 
 class Downsample(nn.Module):
@@ -16,7 +16,8 @@ class Downsample(nn.Module):
         super().__init__()
         self.interpolate = not stride_down
         if stride_down:
-            self.conv = nn.Conv1d(chan_in, chan_out, kernel_size=3, padding=1, stride=2)
+            self.conv = nn.Conv1d(
+                chan_in, chan_out, kernel_size=3, padding=1, stride=2)
         else:
             self.conv = nn.Conv1d(chan_in, chan_out, kernel_size=3, padding=1)
         if norm:
@@ -49,13 +50,13 @@ class ResBlock(nn.Module):
     def __init__(self, chan):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv1d(chan, chan, 3, padding = 1),
+            nn.Conv1d(chan, chan, 3, padding=1),
             nn.GroupNorm(8, chan),
             nn.SiLU(),
-            nn.Conv1d(chan, chan, 3, padding = 1),
+            nn.Conv1d(chan, chan, 3, padding=1),
             nn.GroupNorm(8, chan),
             nn.SiLU(),
-            zero_module(nn.Conv1d(chan, chan, 3, padding = 1)),
+            zero_module(nn.Conv1d(chan, chan, 3, padding=1)),
         )
 
     def forward(self, x):
@@ -86,7 +87,8 @@ class Wav2Vec2GumbelVectorQuantizer(nn.Module):
 
         # storage for codebook variables (codewords)
         self.codevectors = nn.Parameter(
-            torch.FloatTensor(1, self.num_groups * self.num_vars, codevector_dim // self.num_groups)
+            torch.FloatTensor(1, self.num_groups * self.num_vars,
+                              codevector_dim // self.num_groups)
         )
         self.weight_proj = ml.Linear(proj_dim, self.num_groups * self.num_vars)
 
@@ -107,7 +109,8 @@ class Wav2Vec2GumbelVectorQuantizer(nn.Module):
         else:
             marginal_probs = probs.mean(dim=0)
 
-        perplexity = torch.exp(-torch.sum(marginal_probs * torch.log(marginal_probs + 1e-7), dim=-1)).sum()
+        perplexity = torch.exp(-torch.sum(marginal_probs *
+                               torch.log(marginal_probs + 1e-7), dim=-1)).sum()
         return perplexity
 
     def get_codes(self, hidden_states):
@@ -115,9 +118,11 @@ class Wav2Vec2GumbelVectorQuantizer(nn.Module):
 
         # project to codevector dim
         hidden_states = self.weight_proj(hidden_states)
-        hidden_states = hidden_states.view(batch_size * sequence_length * self.num_groups, -1)
+        hidden_states = hidden_states.view(
+            batch_size * sequence_length * self.num_groups, -1)
         codevector_idx = hidden_states.argmax(dim=-1)
-        idxs = codevector_idx.view(batch_size, sequence_length, self.num_groups)
+        idxs = codevector_idx.view(
+            batch_size, sequence_length, self.num_groups)
         return idxs
 
     def forward(self, hidden_states, mask_time_indices=None, return_probs=False):
@@ -125,7 +130,8 @@ class Wav2Vec2GumbelVectorQuantizer(nn.Module):
 
         # project to codevector dim
         hidden_states = self.weight_proj(hidden_states)
-        hidden_states = hidden_states.view(batch_size * sequence_length * self.num_groups, -1)
+        hidden_states = hidden_states.view(
+            batch_size * sequence_length * self.num_groups, -1)
 
         if self.training:
             # sample code vector probs via gumbel in differentiable way
@@ -137,7 +143,8 @@ class Wav2Vec2GumbelVectorQuantizer(nn.Module):
             codevector_soft_dist = torch.softmax(
                 hidden_states.view(batch_size * sequence_length, self.num_groups, -1).float(), dim=-1
             )
-            perplexity = self._compute_perplexity(codevector_soft_dist, mask_time_indices)
+            perplexity = self._compute_perplexity(
+                codevector_soft_dist, mask_time_indices)
         else:
             # take argmax in non-differentiable way
             # compute hard codevector distribution (one hot)
@@ -145,15 +152,20 @@ class Wav2Vec2GumbelVectorQuantizer(nn.Module):
             codevector_probs = hidden_states.new_zeros(*hidden_states.shape).scatter_(
                 -1, codevector_idx.view(-1, 1), 1.0
             )
-            codevector_probs = codevector_probs.view(batch_size * sequence_length, self.num_groups, -1)
+            codevector_probs = codevector_probs.view(
+                batch_size * sequence_length, self.num_groups, -1)
 
-            perplexity = self._compute_perplexity(codevector_probs, mask_time_indices)
+            perplexity = self._compute_perplexity(
+                codevector_probs, mask_time_indices)
 
-        codevector_probs = codevector_probs.view(batch_size * sequence_length, -1)
+        codevector_probs = codevector_probs.view(
+            batch_size * sequence_length, -1)
         # use probs to retrieve codevectors
-        codevectors_per_group = codevector_probs.unsqueeze(-1) * self.codevectors
+        codevectors_per_group = codevector_probs.unsqueeze(
+            -1) * self.codevectors
         codevectors = (
-            codevectors_per_group.view(batch_size * sequence_length, self.num_groups, self.num_vars, -1)
+            codevectors_per_group.view(
+                batch_size * sequence_length, self.num_groups, self.num_vars, -1)
             .sum(-2)
             .view(batch_size, sequence_length, -1)
         )
@@ -183,12 +195,14 @@ class MusicQuantizer2(nn.Module):
         self.num_losses_record = []
 
         if down_steps == 0:
-            self.down = nn.Conv1d(inp_channels, inner_dim[0], kernel_size=3, padding=1)
-            self.up = nn.Conv1d(inner_dim[0], inp_channels, kernel_size=3, padding=1)
+            self.down = nn.Conv1d(
+                inp_channels, inner_dim[0], kernel_size=3, padding=1)
+            self.up = nn.Conv1d(
+                inner_dim[0], inp_channels, kernel_size=3, padding=1)
         elif down_steps == 2:
             self.down = nn.Sequential(nn.Conv1d(inp_channels, inner_dim[-1], kernel_size=3, padding=1),
                                       *[Downsample(inner_dim[-i], inner_dim[-i-1], norm=expressive_downsamples, act=expressive_downsamples,
-                                                   stride_down=expressive_downsamples) for i in range(1,len(inner_dim))])
+                                                   stride_down=expressive_downsamples) for i in range(1, len(inner_dim))])
             self.up = nn.Sequential(*[Upsample(inner_dim[i], inner_dim[i+1]) for i in range(len(inner_dim)-1)] +
                                     [nn.Conv1d(inner_dim[-1], inp_channels, kernel_size=3, padding=1)])
 
@@ -209,22 +223,23 @@ class MusicQuantizer2(nn.Module):
     def get_codes(self, mel):
         h = self.down(mel)
         h = self.encoder(h)
-        h = self.enc_norm(h.permute(0,2,1))
+        h = self.enc_norm(h.permute(0, 2, 1))
         return self.quantizer.get_codes(h)
 
     def forward(self, mel, return_decoder_latent=False):
         orig_mel = mel
         cm = ceil_multiple(mel.shape[-1], 2 ** (len(self.down)-1))
         if cm != 0:
-            mel = F.pad(mel, (0,cm-mel.shape[-1]))
+            mel = F.pad(mel, (0, cm-mel.shape[-1]))
 
         h = self.down(mel)
         h = self.encoder(h)
-        h = self.enc_norm(h.permute(0,2,1))
+        h = self.enc_norm(h.permute(0, 2, 1))
         codevectors, perplexity, codes = self.quantizer(h, return_probs=True)
-        diversity = (self.quantizer.num_codevectors - perplexity) / self.quantizer.num_codevectors
+        diversity = (self.quantizer.num_codevectors -
+                     perplexity) / self.quantizer.num_codevectors
         self.log_codes(codes)
-        h = self.decoder(codevectors.permute(0,2,1))
+        h = self.decoder(codevectors.permute(0, 2, 1))
         if return_decoder_latent:
             return h, diversity
 
@@ -237,13 +252,14 @@ class MusicQuantizer2(nn.Module):
     def log_codes(self, codes):
         if self.internal_step % 5 == 0:
             codes = torch.argmax(codes, dim=-1)
-            ccodes = codes[:,:,0]
-            for j in range(1,codes.shape[-1]):
-                ccodes += codes[:,:,j] * self.codebook_size ** j
+            ccodes = codes[:, :, 0]
+            for j in range(1, codes.shape[-1]):
+                ccodes += codes[:, :, j] * self.codebook_size ** j
             codes = ccodes
             codes = codes.flatten()
             l = codes.shape[0]
-            i = self.code_ind if (self.codes.shape[0] - self.code_ind) > l else self.codes.shape[0] - l
+            i = self.code_ind if (
+                self.codes.shape[0] - self.code_ind) > l else self.codes.shape[0] - l
             self.codes[i:i+l] = codes.cpu()
             self.code_ind = self.code_ind + l
             if self.code_ind >= self.codes.shape[0]:
@@ -258,9 +274,9 @@ class MusicQuantizer2(nn.Module):
 
     def update_for_step(self, step, *args):
         self.quantizer.temperature = max(
-                    self.max_gumbel_temperature * self.gumbel_temperature_decay**step,
-                    self.min_gumbel_temperature,
-                )
+            self.max_gumbel_temperature * self.gumbel_temperature_decay**step,
+            self.min_gumbel_temperature,
+        )
 
 
 @register_model
@@ -269,7 +285,8 @@ def register_music_quantizer2(opt_net, opt):
 
 
 if __name__ == '__main__':
-    model = MusicQuantizer2(inner_dim=[1024], codevector_dim=1024, codebook_size=256, codebook_groups=2)
+    model = MusicQuantizer2(
+        inner_dim=[1024], codevector_dim=1024, codebook_size=256, codebook_groups=2)
     print_network(model)
-    mel = torch.randn((2,256,782))
+    mel = torch.randn((2, 256, 782))
     model(mel)

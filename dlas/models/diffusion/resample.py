@@ -73,6 +73,7 @@ class DeterministicSampler:
     Returns the same equally spread-out sampling schedule every time it is called. Automatically handles distributed
     cases by sharing the load across all entities. reset() must be called once a full batch is completed.
     """
+
     def __init__(self, diffusion, sampling_range, env):
         super().__init__()
         self.timesteps = diffusion.num_timesteps
@@ -82,7 +83,8 @@ class DeterministicSampler:
         else:
             self.world_size = 1
         # The sampling range gets spread out across multiple distributed entities.
-        rnge = th.arange(self.rank, sampling_range, step=self.world_size).float() / sampling_range
+        rnge = th.arange(self.rank, sampling_range,
+                         step=self.world_size).float() / sampling_range
         self.indices = (rnge * self.timesteps).long()
 
     def sample(self, batch_size, device):
@@ -91,7 +93,8 @@ class DeterministicSampler:
         """
         assert batch_size < self.indices.shape[0]
         if self.counter+batch_size > self.indices.shape[0]:
-            print(f"Diffusion DeterministicSampler; Likely error. {self.counter}, {batch_size}, {self.indices.shape[0]}. Did you forget to set the sampling range to your batch size for the deterministic sampler?")
+            print(
+                f"Diffusion DeterministicSampler; Likely error. {self.counter}, {batch_size}, {self.indices.shape[0]}. Did you forget to set the sampling range to your batch size for the deterministic sampler?")
             self.counter = 0  # Recover by setting to 0.
         indices = self.indices[self.counter:self.counter+batch_size].to(device)
         self.counter = self.counter + batch_size
@@ -128,14 +131,17 @@ class LossAwareSampler(ScheduleSampler):
         batch_sizes = [x.item() for x in batch_sizes]
         max_bs = max(batch_sizes)
 
-        timestep_batches = [th.zeros(max_bs).to(local_ts) for bs in batch_sizes]
-        loss_batches = [th.zeros(max_bs).to(local_losses) for bs in batch_sizes]
+        timestep_batches = [th.zeros(max_bs).to(local_ts)
+                            for bs in batch_sizes]
+        loss_batches = [th.zeros(max_bs).to(local_losses)
+                        for bs in batch_sizes]
         dist.all_gather(timestep_batches, local_ts)
         dist.all_gather(loss_batches, local_losses)
         timesteps = [
             x.item() for y, bs in zip(timestep_batches, batch_sizes) for x in y[:bs]
         ]
-        losses = [x.item() for y, bs in zip(loss_batches, batch_sizes) for x in y[:bs]]
+        losses = [x.item() for y, bs in zip(loss_batches, batch_sizes)
+                  for x in y[:bs]]
         self.update_with_all_losses(timesteps, losses)
 
     @abstractmethod

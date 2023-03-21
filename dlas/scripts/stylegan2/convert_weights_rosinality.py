@@ -4,16 +4,17 @@
 # Also doesn't require you to install Tensorflow 1.15 or clone the nVidia repo.
 
 import argparse
-import os
-import sys
-import pickle
 import math
+import os
+import pickle
+import sys
 
-import torch
 import numpy as np
+import torch
 from torchvision import utils
 
-from models.image_generation.stylegan.stylegan2_rosinality import Generator, Discriminator
+from dlas.models.image_generation.stylegan.stylegan2_rosinality import (
+    Discriminator, Generator)
 
 
 # Converts from the TF state_dict input provided into the vars originally expected from the rosinality converter.
@@ -24,6 +25,7 @@ def get_vars(vars, source_name):
     for t in vars_as_tuple_list:
         result_vars[t[0]] = t[1]
     return result_vars, source_name.replace(net_name + "/", "")
+
 
 def get_vars_direct(vars, source_name):
     v, n = get_vars(vars, source_name)
@@ -70,10 +72,12 @@ def convert_conv(vars, source_name, target_name, bias=True, start=0):
 
     dic_torch = {}
 
-    dic_torch[target_name + f".{start}.weight"] = torch.from_numpy(dic["weight"])
+    dic_torch[target_name +
+              f".{start}.weight"] = torch.from_numpy(dic["weight"])
 
     if bias:
-        dic_torch[target_name + f".{start + 1}.bias"] = torch.from_numpy(dic["bias"])
+        dic_torch[target_name +
+                  f".{start + 1}.bias"] = torch.from_numpy(dic["bias"])
 
     return dic_torch
 
@@ -123,7 +127,8 @@ def update(state_dict, new):
 def discriminator_fill_statedict(statedict, vars, size):
     log_size = int(math.log(size, 2))
 
-    update(statedict, convert_conv(vars, f"D/{size}x{size}/FromRGB", "convs.0"))
+    update(statedict, convert_conv(
+        vars, f"D/{size}x{size}/FromRGB", "convs.0"))
 
     conv_i = 1
 
@@ -131,7 +136,8 @@ def discriminator_fill_statedict(statedict, vars, size):
         reso = 4 * 2 ** i
         update(
             statedict,
-            convert_conv(vars, f"D/{reso}x{reso}/Conv0", f"convs.{conv_i}.conv1"),
+            convert_conv(vars, f"D/{reso}x{reso}/Conv0",
+                         f"convs.{conv_i}.conv1"),
         )
         update(
             statedict,
@@ -158,7 +164,8 @@ def fill_statedict(state_dict, vars, size):
     log_size = int(math.log(size, 2))
 
     for i in range(8):
-        update(state_dict, convert_dense(vars, f"G_mapping/Dense{i}", f"style.{i + 1}"))
+        update(state_dict, convert_dense(
+            vars, f"G_mapping/Dense{i}", f"style.{i + 1}"))
 
     update(
         state_dict,
@@ -175,7 +182,8 @@ def fill_statedict(state_dict, vars, size):
         reso = 4 * 2 ** (i + 1)
         update(
             state_dict,
-            convert_torgb(vars, f"G_synthesis/{reso}x{reso}/ToRGB", f"to_rgbs.{i}"),
+            convert_torgb(
+                vars, f"G_synthesis/{reso}x{reso}/ToRGB", f"to_rgbs.{i}"),
         )
 
     update(state_dict, convert_modconv(vars, "G_synthesis/4x4/Conv", "conv1"))
@@ -232,12 +240,13 @@ if __name__ == "__main__":
         default=2,
         help="channel multiplier factor. config-f = 2, else = 1",
     )
-    parser.add_argument("path", metavar="PATH", help="path to the tensorflow weights")
+    parser.add_argument("path", metavar="PATH",
+                        help="path to the tensorflow weights")
 
     args = parser.parse_args()
     sys.path.append('scripts\\stylegan2')
 
-    from dnnlib.tflib.network import generator, discriminator, gen_ema
+    from dnnlib.tflib.network import discriminator, gen_ema, generator
 
     with open(args.path, "rb") as f:
         pickle.load(f)
@@ -252,16 +261,17 @@ if __name__ == "__main__":
 
     d = Discriminator(size, args.channel_multiplier)
     dstate_dict = d.state_dict()
-    dstate_dict = discriminator_fill_statedict(dstate_dict, discriminator, size)
+    dstate_dict = discriminator_fill_statedict(
+        dstate_dict, discriminator, size)
     d.load_state_dict(dstate_dict, strict=True)
-
 
     latent_avg = torch.from_numpy(get_vars_direct(gen_ema, "G/dlatent_avg"))
 
     ckpt = {"g_ema": state_dict, "latent_avg": latent_avg}
 
     if args.gen:
-        g_train = Generator(size, 512, 8, channel_multiplier=args.channel_multiplier)
+        g_train = Generator(
+            size, 512, 8, channel_multiplier=args.channel_multiplier)
         g_train_state = g_train.state_dict()
         g_train_state = fill_statedict(g_train_state, generator, size)
         ckpt["g"] = g_train_state
@@ -269,7 +279,8 @@ if __name__ == "__main__":
     if args.disc:
         disc = Discriminator(size, channel_multiplier=args.channel_multiplier)
         d_state = disc.state_dict()
-        d_state = discriminator_fill_statedict(d_state, discriminator.vars, size)
+        d_state = discriminator_fill_statedict(
+            d_state, discriminator.vars, size)
         ckpt["d"] = d_state
 
     name = os.path.splitext(os.path.basename(args.path))[0]

@@ -4,10 +4,12 @@ from collections import OrderedDict
 
 import torch
 import torch.nn as nn
-import trainer.networks as networks
-import trainer.lr_scheduler as lr_scheduler
-from .base_model import BaseModel
 import torch_intermediary as ml
+
+import dlas.trainer.lr_scheduler as lr_scheduler
+import dlas.trainer.networks as networks
+
+from .base_model import BaseModel
 
 logger = logging.getLogger('base')
 
@@ -41,11 +43,12 @@ class FeatureModel(BaseModel):
                     optim_params.append(v)
                 else:
                     if self.rank <= 0:
-                        logger.warning('Params [{:s}] will not optimize.'.format(k))
+                        logger.warning(
+                            'Params [{:s}] will not optimize.'.format(k))
             # torch.optim.Adam
             self.optimizer_G = ml.Adam(optim_params, lr=train_opt['lr_G'],
-                                                weight_decay=wd_G,
-                                                betas=(train_opt['beta1_G'], train_opt['beta2_G']))
+                                       weight_decay=wd_G,
+                                       betas=(train_opt['beta1_G'], train_opt['beta2_G']))
             self.optimizers.append(self.optimizer_G)
 
             # schedulers
@@ -64,7 +67,8 @@ class FeatureModel(BaseModel):
                             optimizer, train_opt['T_period'], eta_min=train_opt['eta_min'],
                             restarts=train_opt['restarts'], weights=train_opt['restart_weights']))
             else:
-                raise NotImplementedError('MultiStepLR learning rate scheme is enough.')
+                raise NotImplementedError(
+                    'MultiStepLR learning rate scheme is enough.')
 
             self.log_dict = OrderedDict()
 
@@ -97,7 +101,8 @@ class FeatureModel(BaseModel):
         load_path_G = self.opt['path']['pretrain_model_G']
         if load_path_G is not None:
             logger.info('Loading model for F [{:s}] ...'.format(load_path_G))
-            self.load_network(load_path_G, self.fea_train, self.opt['path']['strict_load'])
+            self.load_network(load_path_G, self.fea_train,
+                              self.opt['path']['strict_load'])
 
     def save(self, iter_label):
         self.save_network(self.fea_train, 'G', iter_label)

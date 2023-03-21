@@ -1,7 +1,7 @@
 import torchvision.utils
 
-from utils.music_utils import music2mel, music2cqt
-from utils.util import load_audio
+from dlas.utils.music_utils import music2cqt, music2mel
+from dlas.utils.util import load_audio
 
 if __name__ == '__main__':
     clip = load_audio('Y:\\split\\yt-music-eval\\00001.wav', 22050)

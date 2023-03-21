@@ -11,18 +11,20 @@
 #
 #  Created by Xiao Li on 23-03-2020.
 #  Copyright (c) 2020. All rights reserved.
+import argparse
 from random import shuffle
 
-import numpy as np
 import matplotlib.pyplot as pyplot
-import argparse
+import numpy as np
 import torch
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--xfile", type=str, default="mnist2500_X.txt", help="file name of feature stored")
-parser.add_argument("--cuda", type=int, default=1, help="if use cuda accelarate")
+parser.add_argument("--xfile", type=str, default="mnist2500_X.txt",
+                    help="file name of feature stored")
+parser.add_argument("--cuda", type=int, default=1,
+                    help="if use cuda accelarate")
 
 opt = parser.parse_args()
 print("get choice from args", opt)
@@ -143,7 +145,8 @@ def tsne(X, no_dims=2, initial_dims=50, perplexity=30.0):
         return -1
 
     # Initialize variables
-    X = pca_torch(X, initial_dims).to('cuda')  # Sending to('cuda') after because torch.eig is broken in Windows currently on Ampere GPUs.
+    # Sending to('cuda') after because torch.eig is broken in Windows currently on Ampere GPUs.
+    X = pca_torch(X, initial_dims).to('cuda')
     (n, d) = X.shape
     max_iter = 1000
     initial_momentum = 0.5
@@ -177,7 +180,8 @@ def tsne(X, no_dims=2, initial_dims=50, perplexity=30.0):
         # Compute gradient
         PQ = P - Q
         for i in range(n):
-            dY[i, :] = torch.sum((PQ[:, i] * num[:, i]).repeat(no_dims, 1).t() * (Y[i, :] - Y), 0)
+            dY[i, :] = torch.sum(
+                (PQ[:, i] * num[:, i]).repeat(no_dims, 1).t() * (Y[i, :] - Y), 0)
 
         # Perform the update
         if iter < 20:
@@ -185,7 +189,8 @@ def tsne(X, no_dims=2, initial_dims=50, perplexity=30.0):
         else:
             momentum = final_momentum
 
-        gains = (gains + 0.2) * ((dY > 0.) != (iY > 0.)).double() + (gains * 0.8) * ((dY > 0.) == (iY > 0.)).double()
+        gains = (gains + 0.2) * ((dY > 0.) != (iY > 0.)).double() + \
+            (gains * 0.8) * ((dY > 0.) == (iY > 0.)).double()
         gains[gains < min_gain] = min_gain
         iY = momentum * iY - eta * (gains * dY)
         Y = Y + iY
@@ -217,8 +222,8 @@ def run_tsne_instance_level():
 
     # confirm that x file get same number point than label file
     # otherwise may cause error in scatter
-    assert(len(X[:, 0])==len(X[:,1]))
-    assert(len(X)==len(labels))
+    assert (len(X[:, 0]) == len(X[:, 1]))
+    assert (len(X) == len(labels))
 
     with torch.no_grad():
         Y = tsne(X, 2, 2048, 20.0)
@@ -244,21 +249,24 @@ def run_tsne_instance_level():
 def plot_instance_level_results_as_image_graph():
     Y, files = torch.load('../tsne_output.pth')
     fig, ax = pyplot.subplots()
-    fig.set_size_inches(200,200,forward=True)
+    fig.set_size_inches(200, 200, forward=True)
     ax.update_datalim(np.column_stack([Y[:, 0], Y[:, 1]]))
     ax.autoscale()
 
     for b in tqdm(range(Y.shape[0])):
         im = pyplot.imread(files[b])
         im = OffsetImage(im, zoom=1/2)
-        ab = AnnotationBbox(im, (Y[b, 0], Y[b, 1]), xycoords='data', frameon=False)
+        ab = AnnotationBbox(im, (Y[b, 0], Y[b, 1]),
+                            xycoords='data', frameon=False)
         ax.add_artist(ab)
     ax.scatter(Y[:, 0], Y[:, 1])
 
     pyplot.savefig('tsne.pdf')
 
 
-random_coords = [(8,8),(12,12),(18,18),(24,24)]
+random_coords = [(8, 8), (12, 12), (18, 18), (24, 24)]
+
+
 def run_tsne_pixel_level():
     limit = 4000
 
@@ -294,8 +302,8 @@ def run_tsne_pixel_level():
 
     # confirm that x file get same number point than label file
     # otherwise may cause error in scatter
-    assert(len(X[:, 0])==len(X[:,1]))
-    assert(len(X)==len(labels))
+    assert (len(X[:, 0]) == len(X[:, 1]))
+    assert (len(X) == len(labels))
 
     with torch.no_grad():
         Y = tsne(X, 2, 128, 20.0)
@@ -321,11 +329,12 @@ def run_tsne_pixel_level():
 def plot_pixel_level_results_as_image_graph():
     Y, files = torch.load('../tsne_output_pix.pth')
     fig, ax = pyplot.subplots()
-    fig.set_size_inches(200,200,forward=True)
+    fig.set_size_inches(200, 200, forward=True)
     ax.update_datalim(np.column_stack([Y[:, 0], Y[:, 1]]))
     ax.autoscale()
 
-    expansion = 8  # Should be latent_compression(=8) * image_compression_at_inference(=1)
+    # Should be latent_compression(=8) * image_compression_at_inference(=1)
+    expansion = 8
     margins = 4  # Keep in mind this will be multiplied by <expansion>
     for b in tqdm(range(Y.shape[0])):
         if b % 4 == 0:
@@ -333,11 +342,12 @@ def plot_pixel_level_results_as_image_graph():
             imgfile = files[id]
             baseim = pyplot.imread(imgfile)
 
-        ct, cl = random_coords[b%4]
+        ct, cl = random_coords[b % 4]
         im = baseim[expansion*(ct-margins):expansion*(ct+margins),
-                    expansion*(cl-margins):expansion*(cl+margins),:]
+                    expansion*(cl-margins):expansion*(cl+margins), :]
         im = OffsetImage(im, zoom=1)
-        ab = AnnotationBbox(im, (Y[b, 0], Y[b, 1]), xycoords='data', frameon=False)
+        ab = AnnotationBbox(im, (Y[b, 0], Y[b, 1]),
+                            xycoords='data', frameon=False)
         ax.add_artist(ab)
     ax.scatter(Y[:, 0], Y[:, 1])
 
@@ -357,8 +367,8 @@ def run_tsne_segformer():
 
     # confirm that x file get same number point than label file
     # otherwise may cause error in scatter
-    assert(len(X[:, 0])==len(X[:,1]))
-    assert(len(X)==len(labels))
+    assert (len(X[:, 0]) == len(X[:, 1]))
+    assert (len(X) == len(labels))
 
     with torch.no_grad():
         Y = tsne(X, 2, 1024, 20.0)
@@ -384,7 +394,7 @@ def run_tsne_segformer():
 def plot_segformer_results_as_image_graph():
     Y, points, files = torch.load('../tsne_output.pth')
     fig, ax = pyplot.subplots()
-    fig.set_size_inches(200,200,forward=True)
+    fig.set_size_inches(200, 200, forward=True)
     ax.update_datalim(np.column_stack([Y[:, 0], Y[:, 1]]))
     ax.autoscale()
 
@@ -395,9 +405,10 @@ def plot_segformer_results_as_image_graph():
         ct, cl = points[b]
 
         im = baseim[(ct-margins):(ct+margins),
-                    (cl-margins):(cl+margins),:]
+                    (cl-margins):(cl+margins), :]
         im = OffsetImage(im, zoom=1)
-        ab = AnnotationBbox(im, (Y[b, 0], Y[b, 1]), xycoords='data', frameon=False)
+        ab = AnnotationBbox(im, (Y[b, 0], Y[b, 1]),
+                            xycoords='data', frameon=False)
         ax.add_artist(ab)
     ax.scatter(Y[:, 0], Y[:, 1])
 
@@ -406,13 +417,13 @@ def plot_segformer_results_as_image_graph():
 
 if __name__ == "__main__":
     # For use with instance-level results (e.g. from byol_resnet_playground.py)
-    #run_tsne_instance_level()
-    #plot_instance_level_results_as_image_graph()
+    # run_tsne_instance_level()
+    # plot_instance_level_results_as_image_graph()
 
     # For use with pixel-level results (e.g. from byol_uresnet_playground)
-    #run_tsne_pixel_level()
-    #plot_pixel_level_results_as_image_graph()
+    # run_tsne_pixel_level()
+    # plot_pixel_level_results_as_image_graph()
 
     # For use with segformer results
     run_tsne_segformer()
-    #plot_segformer_results_as_image_graph()
+    # plot_segformer_results_as_image_graph()

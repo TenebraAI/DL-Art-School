@@ -1,26 +1,27 @@
 import os
 
-import torch
 import numpy as np
+import torch
 import torchaudio
 import torchvision
 from tqdm import tqdm
 
-from models.audio.music.tfdpc_v5 import TransformerDiffusionWithPointConditioning
-from utils.music_utils import get_cheater_decoder, get_mel2wav_v3_model
-from utils.util import load_audio
-from trainer.injectors.audio_injectors import TorchMelSpectrogramInjector, denormalize_torch_mel, pixel_shuffle_1d
-from trainer.injectors.audio_injectors import MusicCheaterLatentInjector
-from models.diffusion.respace import SpacedDiffusion
-from models.diffusion.respace import space_timesteps
-from models.diffusion.gaussian_diffusion import get_named_beta_schedule
+from dlas.models.audio.music.tfdpc_v5 import \
+    TransformerDiffusionWithPointConditioning
+from dlas.models.diffusion.gaussian_diffusion import get_named_beta_schedule
+from dlas.models.diffusion.respace import SpacedDiffusion, space_timesteps
+from dlas.trainer.injectors.audio_injectors import (
+    MusicCheaterLatentInjector, TorchMelSpectrogramInjector,
+    denormalize_torch_mel, pixel_shuffle_1d)
+from dlas.utils.music_utils import get_cheater_decoder, get_mel2wav_v3_model
+from dlas.utils.util import load_audio
 
 
 def join_music_with_cheaters(clip1_cheater, clip2_cheater, results_dir):
-    clip1_leadin = clip1_cheater[:,:,-60:]
-    clip1_cheater = clip1_cheater[:,:,:-60]
-    clip2_leadin = clip2_cheater[:,:,:60]
-    clip2_cheater = clip2_cheater[:,:,60:]
+    clip1_leadin = clip1_cheater[:, :, -60:]
+    clip1_cheater = clip1_cheater[:, :, :-60]
+    clip2_leadin = clip2_cheater[:, :, :60]
+    clip2_cheater = clip2_cheater[:, :, 60:]
 
     """
     # Original model
@@ -34,13 +35,15 @@ def join_music_with_cheaters(clip1_cheater, clip2_cheater, results_dir):
                                                       contraction_dim=512, num_heads=8, num_layers=32, dropout=0,
                                                       use_fp16=False, unconditioned_percentage=0, time_proj=False,
                                                       new_cond=True, regularization=False).eval().cuda()
-    model.load_state_dict(torch.load('x:/dlas/experiments/train_music_cheater_gen_v5_cosine_40_lyr/models/64000_generator_ema.pth'))
+    model.load_state_dict(torch.load(
+        'x:/dlas/experiments/train_music_cheater_gen_v5_cosine_40_lyr/models/64000_generator_ema.pth'))
     diffusion_type = 'cosine'
     diffuser = SpacedDiffusion(use_timesteps=space_timesteps(4000, [256]), model_mean_type='epsilon',
                                model_var_type='learned_range', loss_type='mse', betas=get_named_beta_schedule(diffusion_type, 4000),
                                conditioning_free=True, conditioning_free_k=2)
 
-    inp = torch.cat([clip1_leadin, torch.zeros(1, 256, 240, device='cuda'), clip2_leadin], dim=-1)
+    inp = torch.cat([clip1_leadin, torch.zeros(
+        1, 256, 240, device='cuda'), clip2_leadin], dim=-1)
     mask = torch.ones_like(inp)
     mask[:, :, 60:-60] = 0
     gen_cheater = diffuser.ddim_sample_loop_with_guidance(model, inp, mask,  # causal=True, causal_slope=4,
@@ -50,12 +53,14 @@ def join_music_with_cheaters(clip1_cheater, clip2_cheater, results_dir):
     cheater_to_mel = get_cheater_decoder().diff.cuda()
     cheater_decoder_diffuser = SpacedDiffusion(use_timesteps=space_timesteps(4000, [64]), model_mean_type='epsilon',
                                                model_var_type='learned_range', loss_type='mse',
-                                               betas=get_named_beta_schedule('linear', 4000),
+                                               betas=get_named_beta_schedule(
+                                                   'linear', 4000),
                                                conditioning_free=True, conditioning_free_k=1)
     m2w = get_mel2wav_v3_model().cuda()
     spectral_diffuser = SpacedDiffusion(use_timesteps=space_timesteps(4000, [32]), model_mean_type='epsilon',
                                         model_var_type='learned_range', loss_type='mse',
-                                        betas=get_named_beta_schedule('linear', 4000),
+                                        betas=get_named_beta_schedule(
+                                            'linear', 4000),
                                         conditioning_free=True, conditioning_free_k=1)
 
     MAX_CONTEXT = 30 * 22050 // 4096
@@ -65,7 +70,8 @@ def join_music_with_cheaters(clip1_cheater, clip2_cheater, results_dir):
         gen_mel = cheater_decoder_diffuser.ddim_sample_loop(cheater_to_mel, (1, 256, chunk_cheater.shape[-1] * 16),
                                                             progress=True,
                                                             model_kwargs={'codes': chunk_cheater.permute(0, 2, 1)})
-        torchvision.utils.save_image((gen_mel + 1) / 2, f'{results_dir}/mel_{i}.png')
+        torchvision.utils.save_image(
+            (gen_mel + 1) / 2, f'{results_dir}/mel_{i}.png')
 
         gen_mel_denorm = denormalize_torch_mel(gen_mel)
         output_shape = (1, 16, gen_mel_denorm.shape[-1] * 256 // 16)
@@ -80,8 +86,9 @@ def join_music_with_cheaters(clip1_cheater, clip2_cheater, results_dir):
 def join_music(clip1, clip2, results_dir):
     with torch.no_grad():
         spec_fn = TorchMelSpectrogramInjector({'n_mel_channels': 256, 'mel_fmax': 11000, 'filter_length': 16000, 'true_normalization': True,
-                                                    'normalize': True, 'in': 'in', 'out': 'out'}, {}).cuda()
-        cheater_encoder = MusicCheaterLatentInjector({'in': 'in', 'out': 'out'}, {}).cuda()
+                                               'normalize': True, 'in': 'in', 'out': 'out'}, {}).cuda()
+        cheater_encoder = MusicCheaterLatentInjector(
+            {'in': 'in', 'out': 'out'}, {}).cuda()
         clip1 = load_audio(clip1, 22050).cuda()
         clip1_mel = spec_fn({'in': clip1.unsqueeze(0)})['out']
         clip1_cheater = cheater_encoder({'in': clip1_mel})['out']
@@ -89,7 +96,6 @@ def join_music(clip1, clip2, results_dir):
         clip2_mel = spec_fn({'in': clip2.unsqueeze(0)})['out']
         clip2_cheater = cheater_encoder({'in': clip2_mel})['out']
         join_music_with_cheaters(clip1_cheater, clip2_cheater, results_dir)
-
 
 
 if __name__ == '__main__':
@@ -120,5 +126,7 @@ if __name__ == '__main__':
     """
     results_dir = f'../results/audio_joiner/machine_gun_from_cheater'
     os.makedirs(results_dir, exist_ok=True)
-    cheater = torch.tensor(np.load('Y:\\separated\\large_mel_cheaters\\bt-music-1\\ff8-fithos_lusec_wecos_vinosec-1999\\08 - The Man with the Machine Gun\\0.npz')['arr_0']).cuda()
-    join_music_with_cheaters(cheater[:,:,:230], cheater[:,:,-230:], results_dir)
+    cheater = torch.tensor(np.load(
+        'Y:\\separated\\large_mel_cheaters\\bt-music-1\\ff8-fithos_lusec_wecos_vinosec-1999\\08 - The Man with the Machine Gun\\0.npz')['arr_0']).cuda()
+    join_music_with_cheaters(
+        cheater[:, :, :230], cheater[:, :, -230:], results_dir)

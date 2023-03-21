@@ -5,16 +5,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import autocast
-import torch_intermediary as ml
+from x_transformers import ContinuousTransformerWrapper, Encoder
 
-from models.diffusion.nn import timestep_embedding, normalization, zero_module, conv_nd, linear
-from models.diffusion.unet_diffusion import AttentionBlock, TimestepEmbedSequential, \
-    Downsample, Upsample, TimestepBlock
-from models.audio.tts.mini_encoder import AudioMiniEncoder
-from scripts.audio.gen.use_diffuse_tts import ceil_multiple
-from trainer.networks import register_model
-from utils.util import checkpoint
-from x_transformers import Encoder, ContinuousTransformerWrapper
+import dlas.torch_intermediary as ml
+from dlas.models.audio.tts.mini_encoder import AudioMiniEncoder
+from dlas.models.diffusion.nn import (conv_nd, linear, normalization,
+                                      timestep_embedding, zero_module)
+from dlas.models.diffusion.unet_diffusion import (AttentionBlock, Downsample,
+                                                  TimestepBlock,
+                                                  TimestepEmbedSequential,
+                                                  Upsample)
+from dlas.scripts.audio.gen.use_diffuse_tts import ceil_multiple
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint
 
 
 def clustered_mask(probability, shape, dev, lateral_expansion_radius_max=3, inverted=False):
@@ -567,4 +570,3 @@ if __name__ == '__main__':
     o.sum().backward()
     model.before_step(0)
     torch.save(model.state_dict(), 'test_out.pth')
-

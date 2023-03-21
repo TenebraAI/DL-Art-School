@@ -4,12 +4,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.diffusion.nn import timestep_embedding, normalization, zero_module, conv_nd, linear
-from models.diffusion.unet_diffusion import TimestepEmbedSequential, \
-    Downsample, Upsample, TimestepBlock
-from scripts.audio.gen.use_diffuse_tts import ceil_multiple
-from trainer.networks import register_model
-from utils.util import checkpoint, print_network
+from dlas.models.diffusion.nn import (conv_nd, linear, normalization,
+                                      timestep_embedding, zero_module)
+from dlas.models.diffusion.unet_diffusion import (Downsample, TimestepBlock,
+                                                  TimestepEmbedSequential,
+                                                  Upsample)
+from dlas.scripts.audio.gen.use_diffuse_tts import ceil_multiple
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint, print_network
 
 
 def is_sequence(t):
@@ -368,4 +370,3 @@ if __name__ == '__main__':
     # Test with sequence aligned conditioning
     o = model(clip, ts, aligned_sequence)
     print_network(model)
-

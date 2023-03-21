@@ -1,11 +1,13 @@
 import argparse
 import logging
 import os
+
 from pydub import AudioSegment
 from pydub.exceptions import CouldntDecodeError
 from pydub.silence import split_on_silence
-from data.util import find_audio_files
 from tqdm import tqdm
+
+from dlas.data.util import find_audio_files
 
 
 # Uses pydub to process a directory of audio files, splitting them into clips at points where it detects a small amount
@@ -20,7 +22,8 @@ def main():
     files = find_audio_files(args.path, include_nonwav=True)
     for e, wav_file in enumerate(tqdm(files)):
         print(f"Processing {wav_file}..")
-        outdir = os.path.join(args.out, f'{e}_{os.path.basename(wav_file[:-4])}').replace('.', '').strip()
+        outdir = os.path.join(
+            args.out, f'{e}_{os.path.basename(wav_file[:-4])}').replace('.', '').strip()
         os.makedirs(outdir, exist_ok=True)
 
         try:
@@ -34,7 +37,9 @@ def main():
         for i in range(0, len(chunks)):
             if chunks[i].duration_seconds < minimum_duration or chunks[i].duration_seconds > maximum_duration:
                 continue
-            chunks[i].export(f"{outdir}/{i:05d}.mp3", format='mp3', parameters=["-ac", "1"])
+            chunks[i].export(f"{outdir}/{i:05d}.mp3",
+                             format='mp3', parameters=["-ac", "1"])
+
 
 if __name__ == '__main__':
     main()

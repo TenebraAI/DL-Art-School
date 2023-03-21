@@ -1,9 +1,10 @@
 import sys
 
-from models.audio.tts.tacotron2.stft import STFT
+import torch
+
+from dlas.models.audio.tts.tacotron2.stft import STFT
 
 sys.path.append('tacotron2')
-import torch
 
 
 class Denoiser(torch.nn.Module):

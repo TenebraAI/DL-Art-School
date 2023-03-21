@@ -2,26 +2,25 @@ import copy
 import logging
 import os
 from math import sqrt
-from time import time
 
 import torch
+import torch.nn as nn
+import torchvision.utils as utils
 from torch import distributed
 from torch.nn.parallel import DataParallel
-import torch.nn as nn
 
-import trainer.lr_scheduler as lr_scheduler
-import trainer.networks as networks
-from trainer.base_model import BaseModel
-from trainer.batch_size_optimizer import create_batch_size_optimizer
-from trainer.inject import create_injector
-from trainer.injectors.audio_injectors import normalize_mel
-from trainer.steps import ConfigurableStep
-from trainer.experiments.experiments import get_experiment_for_name
-import torchvision.utils as utils
-
-from utils.loss_accumulator import LossAccumulator, InfStorageLossAccumulator
-from utils.util import opt_get, denormalize
-import torch_intermediary as ml
+import dlas.torch_intermediary as ml
+import dlas.trainer.lr_scheduler as lr_scheduler
+import dlas.trainer.networks as networks
+from dlas.trainer.base_model import BaseModel
+from dlas.trainer.batch_size_optimizer import create_batch_size_optimizer
+from dlas.trainer.experiments.experiments import get_experiment_for_name
+from dlas.trainer.inject import create_injector
+from dlas.trainer.injectors.audio_injectors import normalize_mel
+from dlas.trainer.steps import ConfigurableStep
+from dlas.utils.loss_accumulator import (InfStorageLossAccumulator,
+                                         LossAccumulator)
+from dlas.utils.util import denormalize, opt_get
 
 logger = logging.getLogger('base')
 
@@ -31,6 +30,7 @@ class OverwrittenStateError(Exception):
     def __init__(self, k, keys):
         super().__init__(f'Attempted to overwrite state key: {k}.  The state should be considered '
                          f'immutable and keys should not be overwritten. Current keys: {keys}')
+
 
 class ExtensibleTrainer(BaseModel):
     def __init__(self, opt, cached_networks={}):
@@ -43,13 +43,13 @@ class ExtensibleTrainer(BaseModel):
 
         # env is used as a global state to store things that subcomponents might need.
         self.env = {'device': self.device,
-               'rank': self.rank,
-               'opt': opt,
-               'step': 0,
-               'dist': opt['dist']
-        }
+                    'rank': self.rank,
+                    'opt': opt,
+                    'step': 0,
+                    'dist': opt['dist']
+                    }
         if opt['path']['models'] is not None:
-               self.env['base_path'] = os.path.join(opt['path']['models'])
+            self.env['base_path'] = os.path.join(opt['path']['models'])
 
         self.mega_batch_factor = 1
         if self.is_train:
@@ -62,10 +62,13 @@ class ExtensibleTrainer(BaseModel):
             self.do_emas = opt_get(train_opt, ['ema_enabled'], True)
             self.ema_on_cpu = opt_get(train_opt, ['ema_on_cpu'], False)
         self.checkpointing_cache = opt['checkpointing_enabled']
-        self.auto_recover = opt_get(opt, ['automatically_recover_nan_by_reverting_n_saves'], None)
+        self.auto_recover = opt_get(
+            opt, ['automatically_recover_nan_by_reverting_n_saves'], None)
         self.batch_size_optimizer = create_batch_size_optimizer(train_opt)
-        self.auto_scale_grads = opt_get(opt, ['automatically_scale_grads_for_fanin'], False)
-        self.auto_scale_basis = opt_get(opt, ['automatically_scale_base_layer_size'], 1024)
+        self.auto_scale_grads = opt_get(
+            opt, ['automatically_scale_grads_for_fanin'], False)
+        self.auto_scale_basis = opt_get(
+            opt, ['automatically_scale_base_layer_size'], 1024)
 
         self.netsG = {}
         self.netsD = {}
@@ -80,14 +83,17 @@ class ExtensibleTrainer(BaseModel):
                 new_net = None
             if net['type'] == 'generator':
                 if new_net is None:
-                    new_net = networks.create_model(opt, net, self.netsG).to(self.device)
+                    new_net = networks.create_model(
+                        opt, net, self.netsG).to(self.device)
                 self.netsG[name] = new_net
             elif net['type'] == 'discriminator':
                 if new_net is None:
-                    new_net = networks.create_model(opt, net, self.netsD).to(self.device)
+                    new_net = networks.create_model(
+                        opt, net, self.netsD).to(self.device)
                 self.netsD[name] = new_net
             else:
-                raise NotImplementedError("Can only handle generators and discriminators")
+                raise NotImplementedError(
+                    "Can only handle generators and discriminators")
 
             if not net['trainable']:
                 new_net.eval()
@@ -100,7 +106,8 @@ class ExtensibleTrainer(BaseModel):
         self.steps = []
         for step_name, step in opt['steps'].items():
             step = ConfigurableStep(step, self.env)
-            self.step_names.append(step_name)  # This could be an OrderedDict, but it's a PITA to integrate with AMP below.
+            # This could be an OrderedDict, but it's a PITA to integrate with AMP below.
+            self.step_names.append(step_name)
             self.steps.append(step)
 
         # step.define_optimizers() relies on the networks being placed in the env, so put them there. Even though
@@ -118,7 +125,8 @@ class ExtensibleTrainer(BaseModel):
             def_opt = []
             for s in self.steps:
                 def_opt.extend(s.get_optimizers_with_default_scheduler())
-            self.schedulers = lr_scheduler.get_scheduler_for_name(train_opt['default_lr_scheme'], def_opt, train_opt)
+            self.schedulers = lr_scheduler.get_scheduler_for_name(
+                train_opt['default_lr_scheme'], def_opt, train_opt)
 
             # Set the starting step count for the scheduler.
             for sched in self.schedulers:
@@ -128,7 +136,8 @@ class ExtensibleTrainer(BaseModel):
 
         # Wrap networks in distributed shells.
         dnets = []
-        all_networks = [g for g in self.netsG.values()] + [d for d in self.netsD.values()]
+        all_networks = [g for g in self.netsG.values()] + \
+            [d for d in self.netsD.values()]
         for anet in all_networks:
             has_any_trainable_params = False
             for p in anet.parameters():
@@ -141,7 +150,9 @@ class ExtensibleTrainer(BaseModel):
                     from apex.parallel import DistributedDataParallel
                     dnet = DistributedDataParallel(anet, delay_allreduce=True)
                 else:
-                    from torch.nn.parallel.distributed import DistributedDataParallel
+                    from torch.nn.parallel.distributed import \
+                        DistributedDataParallel
+
                     # Do NOT be tempted to put find_unused_parameters=True here. It will not work when checkpointing is
                     # used and in a few other cases. But you can try it if you really want.
                     dnet = DistributedDataParallel(anet, device_ids=[torch.cuda.current_device()],
@@ -154,7 +165,8 @@ class ExtensibleTrainer(BaseModel):
                     if opt_get(opt, ['ddp_static_graph'], False):
                         dnet._set_static_graph()
             else:
-                dnet = DataParallel(anet, device_ids=[torch.cuda.current_device()])
+                dnet = DataParallel(
+                    anet, device_ids=[torch.cuda.current_device()])
             if self.is_train:
                 dnet.train()
             else:
@@ -191,7 +203,8 @@ class ExtensibleTrainer(BaseModel):
         # Load experiments
         self.experiments = []
         if 'experiments' in opt.keys():
-            self.experiments = [get_experiment_for_name(e) for e in opt['experiments']]
+            self.experiments = [get_experiment_for_name(
+                e) for e in opt['experiments']]
 
         # Setting this to false triggers SRGAN to call the models update_model() function on the first iteration.
         self.updated = True
@@ -228,7 +241,8 @@ class ExtensibleTrainer(BaseModel):
                 else:
                     v = v[sort_indices]
             if isinstance(v, torch.Tensor):
-                self.dstate[k] = [t.to(self.device) for t in torch.chunk(v, chunks=batch_factor, dim=0)]
+                self.dstate[k] = [t.to(self.device) for t in torch.chunk(
+                    v, chunks=batch_factor, dim=0)]
 
         if opt_get(self.opt, ['train', 'auto_collate'], False):
             for k, v in self.dstate.items():
@@ -238,10 +252,11 @@ class ExtensibleTrainer(BaseModel):
                         if len(v[c].shape) == 2:
                             self.dstate[k][c] = self.dstate[k][c][:, :maxlen]
                         elif len(v[c].shape) == 3:
-                            self.dstate[k][c] = self.dstate[k][c][:, :, :maxlen]
+                            self.dstate[k][c] = self.dstate[k][c][:,
+                                                                  :, :maxlen]
                         elif len(v[c].shape) == 4:
-                            self.dstate[k][c] = self.dstate[k][c][:, :, :, :maxlen]
-
+                            self.dstate[k][c] = self.dstate[k][c][:,
+                                                                  :, :, :maxlen]
 
     def optimize_parameters(self, it, optimize=True, return_grad_norms=False):
         grad_norms = {}
@@ -249,7 +264,8 @@ class ExtensibleTrainer(BaseModel):
         # Some models need to make parametric adjustments per-step. Do that here.
         for net in self.networks.values():
             if hasattr(net.module, "update_for_step"):
-                net.module.update_for_step(it, os.path.join(self.opt['path']['models'], ".."))
+                net.module.update_for_step(it, os.path.join(
+                    self.opt['path']['models'], ".."))
 
         # Iterate through the steps, performing them one at a time.
         state = self.dstate
@@ -283,7 +299,8 @@ class ExtensibleTrainer(BaseModel):
                     if 'after' in self.opt['networks'][name].keys() and it < self.opt['networks'][name]['after']:
                         net_enabled = False
                     for p in net.parameters():
-                        do_not_train_flag = hasattr(p, "DO_NOT_TRAIN") or (hasattr(p, "DO_NOT_TRAIN_UNTIL") and it < p.DO_NOT_TRAIN_UNTIL)
+                        do_not_train_flag = hasattr(p, "DO_NOT_TRAIN") or (
+                            hasattr(p, "DO_NOT_TRAIN_UNTIL") and it < p.DO_NOT_TRAIN_UNTIL)
                         if p.dtype != torch.int64 and p.dtype != torch.bool and not do_not_train_flag:
                             p.requires_grad = net_enabled
                         else:
@@ -291,7 +308,8 @@ class ExtensibleTrainer(BaseModel):
                 assert enabled == len(nets_to_train)
 
                 # Update experiments
-                [e.before_step(self.opt, self.step_names[step_num], self.env, nets_to_train, state) for e in self.experiments]
+                [e.before_step(self.opt, self.step_names[step_num], self.env,
+                               nets_to_train, state) for e in self.experiments]
 
                 for o in step.get_optimizers():
                     o.zero_grad()
@@ -300,7 +318,8 @@ class ExtensibleTrainer(BaseModel):
             new_states = {}
             self.batch_size_optimizer.focus(net)
             for m in range(self.batch_factor):
-                ns = step.do_forward_backward(state, m, step_num, train=train_step, no_ddp_sync=(m+1 < self.batch_factor))
+                ns = step.do_forward_backward(
+                    state, m, step_num, train=train_step, no_ddp_sync=(m+1 < self.batch_factor))
                 # Call into post-backward hooks.
                 for name, net in self.networks.items():
                     if hasattr(net.module, "after_backward"):
@@ -317,7 +336,6 @@ class ExtensibleTrainer(BaseModel):
                 if k in state.keys():
                     raise OverwrittenStateError(k, list(state.keys()))
                 state[k] = v
-
 
             # (Maybe) perform a step.
             if train_step and optimize and self.batch_size_optimizer.should_step(it):
@@ -353,25 +371,29 @@ class ExtensibleTrainer(BaseModel):
                     for name in nets_to_train:
                         model = self.networks[name]
                         if hasattr(model.module, 'get_grad_norm_parameter_groups'):
-                            pgroups = {f'{name}_{k}': v for k, v in model.module.get_grad_norm_parameter_groups().items()}
+                            pgroups = {
+                                f'{name}_{k}': v for k, v in model.module.get_grad_norm_parameter_groups().items()}
                         else:
-                            pgroups = {f'{name}_all_parameters': list(model.parameters())}
+                            pgroups = {f'{name}_all_parameters': list(
+                                model.parameters())}
                     for name in pgroups.keys():
                         stacked_grads = []
                         for p in pgroups[name]:
                             if hasattr(p, 'grad') and p.grad is not None:
-                                stacked_grads.append(torch.norm(p.grad.detach(), 2))
+                                stacked_grads.append(
+                                    torch.norm(p.grad.detach(), 2))
                         if not stacked_grads:
                             continue
-                        grad_norms[name] = torch.norm(torch.stack(stacked_grads), 2)
+                        grad_norms[name] = torch.norm(
+                            torch.stack(stacked_grads), 2)
                         if distributed.is_available() and distributed.is_initialized():
                             # Gather the metric from all devices if in a distributed setting.
-                            distributed.all_reduce(grad_norms[name], op=distributed.ReduceOp.SUM)
+                            distributed.all_reduce(
+                                grad_norms[name], op=distributed.ReduceOp.SUM)
                             grad_norms[name] /= distributed.get_world_size()
                         grad_norms[name] = grad_norms[name].cpu()
 
                 self.consume_gradients(state, step, it)
-
 
         # Record visual outputs for usage in debugging and testing.
         if 'visuals' in self.opt['logger'].keys() and self.rank <= 0 and it % self.opt['logger']['visual_debug_rate'] == 0:
@@ -388,20 +410,26 @@ class ExtensibleTrainer(BaseModel):
                     img = denormalize(img)
                 return img
 
-            sample_save_path = os.path.join(self.opt['path']['models'], "..", "visual_dbg")
+            sample_save_path = os.path.join(
+                self.opt['path']['models'], "..", "visual_dbg")
             for v in self.opt['logger']['visuals']:
                 if v not in state.keys():
-                    continue   # This can happen for several reasons (ex: 'after' defs), just ignore it.
+                    # This can happen for several reasons (ex: 'after' defs), just ignore it.
+                    continue
                 for i, dbgv in enumerate(state[v]):
-                    if 'recurrent_visual_indices' in self.opt['logger'].keys() and len(dbgv.shape)==5:
+                    if 'recurrent_visual_indices' in self.opt['logger'].keys() and len(dbgv.shape) == 5:
                         for rvi in self.opt['logger']['recurrent_visual_indices']:
                             rdbgv = fix_image(dbgv[:, rvi])
-                            os.makedirs(os.path.join(sample_save_path, v), exist_ok=True)
-                            utils.save_image(rdbgv.float(), os.path.join(sample_save_path, v, "%05i_%02i_%02i.png" % (it, rvi, i)))
+                            os.makedirs(os.path.join(
+                                sample_save_path, v), exist_ok=True)
+                            utils.save_image(rdbgv.float(), os.path.join(
+                                sample_save_path, v, "%05i_%02i_%02i.png" % (it, rvi, i)))
                     else:
                         dbgv = fix_image(dbgv)
-                        os.makedirs(os.path.join(sample_save_path, v), exist_ok=True)
-                        utils.save_image(dbgv.float(), os.path.join(sample_save_path, v, "%05i_%02i.png" % (it, i)))
+                        os.makedirs(os.path.join(
+                            sample_save_path, v), exist_ok=True)
+                        utils.save_image(dbgv.float(), os.path.join(
+                            sample_save_path, v, "%05i_%02i.png" % (it, i)))
             # Some models have their own specific visual debug routines.
             for net_name, net in self.networks.items():
                 if hasattr(net.module, "visual_dbg"):
@@ -410,7 +438,6 @@ class ExtensibleTrainer(BaseModel):
                     net.module.visual_dbg(it, model_vdbg_dir)
 
         return grad_norms
-
 
     def consume_gradients(self, state, step, it):
         [e.before_optimize(state) for e in self.experiments]
@@ -433,13 +460,13 @@ class ExtensibleTrainer(BaseModel):
                     new_rate = 1 - ema_rate
                     if self.ema_on_cpu:
                         np = np.cpu()
-                        ema_rate = ema_rate ** 10  # Because it only happens every 10 steps.
+                        # Because it only happens every 10 steps.
+                        ema_rate = ema_rate ** 10
                         mid = (1 - (ema_rate+new_rate))/2
                         ema_rate += mid
                         new_rate += mid
                     ep.detach().mul_(ema_rate).add_(np, alpha=1 - ema_rate)
         [e.after_optimize(state) for e in self.experiments]
-
 
     def test(self):
         for net in self.netsG.values():
@@ -461,16 +488,19 @@ class ExtensibleTrainer(BaseModel):
                 # Iterate through the steps, performing them one at a time.
                 state = self.dstate
                 for step_num, s in enumerate(self.steps):
-                    ns = s.do_forward_backward(state, 0, step_num, train=False, loss_accumulator=accum_metrics)
+                    ns = s.do_forward_backward(
+                        state, 0, step_num, train=False, loss_accumulator=accum_metrics)
                     for k, v in ns.items():
                         state[k] = [v]
 
             self.eval_state = {}
             for k, v in state.items():
                 if isinstance(v, list):
-                    self.eval_state[k] = [s.detach().cpu() if isinstance(s, torch.Tensor) else s for s in v]
+                    self.eval_state[k] = [s.detach().cpu() if isinstance(
+                        s, torch.Tensor) else s for s in v]
                 else:
-                    self.eval_state[k] = [v.detach().cpu() if isinstance(v, torch.Tensor) else v]
+                    self.eval_state[k] = [
+                        v.detach().cpu() if isinstance(v, torch.Tensor) else v]
 
         for net in self.netsG.values():
             net.train()
@@ -493,7 +523,8 @@ class ExtensibleTrainer(BaseModel):
         # Log learning rate (from first param group) too.
         for o in self.optimizers:
             for pgi, pg in enumerate(o.param_groups):
-                log['learning_rate_%s_%i' % (o._config['network'], pgi)] = pg['lr']
+                log['learning_rate_%s_%i' %
+                    (o._config['network'], pgi)] = pg['lr']
 
         # The batch size optimizer also outputs loggable data.
         log.update(self.batch_size_optimizer.get_statistics())
@@ -512,7 +543,8 @@ class ExtensibleTrainer(BaseModel):
 
     def get_current_visuals(self, need_GT=True):
         # Conforms to an archaic format from MMSR.
-        res = {'rlt': self.eval_state[self.opt['eval']['output_state']][0].float().cpu()}
+        res = {'rlt': self.eval_state[self.opt['eval']
+                                      ['output_state']][0].float().cpu()}
         if 'hq' in self.eval_state.keys():
             res['hq'] = self.eval_state['hq'][0].float().cpu(),
         return res
@@ -522,7 +554,8 @@ class ExtensibleTrainer(BaseModel):
             s, n = self.get_network_description(net)
             net_struc_str = '{}'.format(net.__class__.__name__)
             if self.rank <= 0:
-                logger.info('Network {} structure: {}, with parameters: {:,d}'.format(name, net_struc_str, n))
+                logger.info('Network {} structure: {}, with parameters: {:,d}'.format(
+                    name, net_struc_str, n))
                 logger.info(s)
 
     def load(self):
@@ -533,14 +566,17 @@ class ExtensibleTrainer(BaseModel):
                     return
                 if self.rank <= 0:
                     logger.info('Loading model for [%s]' % (load_path,))
-                self.load_network(load_path, net, self.opt['path']['strict_load'], opt_get(self.opt, ['path', f'pretrain_base_path_{name}']))
+                self.load_network(load_path, net, self.opt['path']['strict_load'], opt_get(
+                    self.opt, ['path', f'pretrain_base_path_{name}']))
                 load_path_ema = load_path.replace('.pth', '_ema.pth')
                 if self.is_train and self.do_emas:
                     ema_model = self.emas[name]
                     if os.path.exists(load_path_ema):
-                        self.load_network(load_path_ema, ema_model, self.opt['path']['strict_load'], opt_get(self.opt, ['path', f'pretrain_base_path_{name}']))
+                        self.load_network(load_path_ema, ema_model, self.opt['path']['strict_load'], opt_get(
+                            self.opt, ['path', f'pretrain_base_path_{name}']))
                     else:
-                        print("WARNING! Unable to find EMA network! Starting a new EMA from given model parameters.")
+                        print(
+                            "WARNING! Unable to find EMA network! Starting a new EMA from given model parameters.")
                         self.emas[name] = copy.deepcopy(net)
                     if self.ema_on_cpu:
                         self.emas[name] = self.emas[name].cpu()
@@ -553,7 +589,8 @@ class ExtensibleTrainer(BaseModel):
             if self.opt['networks'][name]['trainable']:
                 self.save_network(net, name, iter_step)
                 if self.do_emas:
-                    self.save_network(self.emas[name], f'{name}_ema', iter_step)
+                    self.save_network(
+                        self.emas[name], f'{name}_ema', iter_step)
 
     def force_restore_swapout(self):
         # Legacy method. Do nothing.

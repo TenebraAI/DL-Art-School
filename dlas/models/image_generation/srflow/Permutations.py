@@ -3,7 +3,7 @@ import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
-from models.image_generation.srflow import thops
+from dlas.models.image_generation.srflow import thops
 
 
 class InvertibleConv1x1(nn.Module):
@@ -25,6 +25,7 @@ class InvertibleConv1x1(nn.Module):
             weight = torch.inverse(self.weight.double()).float() \
                 .view(w_shape[0], w_shape[1], 1, 1)
         return weight, dlogdet
+
     def forward(self, input, logdet=None, reverse=False):
         """
         log-det = log|abs(|W|)| * pixels

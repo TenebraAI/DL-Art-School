@@ -3,13 +3,13 @@ from random import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch import einsum
 
-from models.arch_util import AttentionBlock
-from models.lucidrains.x_transformers import ContinuousTransformerWrapper, Encoder
-from trainer.networks import register_model
-from utils.util import opt_get, checkpoint
-import torch_intermediary as ml
+import dlas.torch_intermediary as ml
+from dlas.models.arch_util import AttentionBlock
+from dlas.models.lucidrains.x_transformers import (
+    ContinuousTransformerWrapper, Encoder)
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint, opt_get
 
 
 def exists(val):
@@ -18,7 +18,7 @@ def exists(val):
 
 def masked_mean(t, mask):
     t = t.masked_fill(~mask, 0.)
-    return t.sum(dim = 1) / mask.sum(dim = 1)
+    return t.sum(dim=1) / mask.sum(dim=1)
 
 
 class InfoNCE(nn.Module):
@@ -84,26 +84,33 @@ def info_nce(query, positive_key, negative_keys=None, temperature=0.1, reduction
         raise ValueError('<positive_key> must have 2 dimensions.')
     if negative_keys is not None:
         if negative_mode == 'unpaired' and negative_keys.dim() != 2:
-            raise ValueError("<negative_keys> must have 2 dimensions if <negative_mode> == 'unpaired'.")
+            raise ValueError(
+                "<negative_keys> must have 2 dimensions if <negative_mode> == 'unpaired'.")
         if negative_mode == 'paired' and negative_keys.dim() != 3:
-            raise ValueError("<negative_keys> must have 3 dimensions if <negative_mode> == 'paired'.")
+            raise ValueError(
+                "<negative_keys> must have 3 dimensions if <negative_mode> == 'paired'.")
 
     # Check matching number of samples.
     if len(query) != len(positive_key):
-        raise ValueError('<query> and <positive_key> must must have the same number of samples.')
+        raise ValueError(
+            '<query> and <positive_key> must must have the same number of samples.')
     if negative_keys is not None:
         if negative_mode == 'paired' and len(query) != len(negative_keys):
-            raise ValueError("If negative_mode == 'paired', then <negative_keys> must have the same number of samples as <query>.")
+            raise ValueError(
+                "If negative_mode == 'paired', then <negative_keys> must have the same number of samples as <query>.")
 
     # Embedding vectors should have same number of components.
     if query.shape[-1] != positive_key.shape[-1]:
-        raise ValueError('Vectors of <query> and <positive_key> should have the same number of components.')
+        raise ValueError(
+            'Vectors of <query> and <positive_key> should have the same number of components.')
     if negative_keys is not None:
         if query.shape[-1] != negative_keys.shape[-1]:
-            raise ValueError('Vectors of <query> and <negative_keys> should have the same number of components.')
+            raise ValueError(
+                'Vectors of <query> and <negative_keys> should have the same number of components.')
 
     # Normalize to unit vectors
-    query, positive_key, negative_keys = normalize(query, positive_key, negative_keys)
+    query, positive_key, negative_keys = normalize(
+        query, positive_key, negative_keys)
     if negative_keys is not None:
         # Explicit negative keys
 
@@ -121,7 +128,8 @@ def info_nce(query, positive_key, negative_keys=None, temperature=0.1, reduction
 
         # First index in last dimension are the positive samples
         logits = torch.cat([positive_logit, negative_logits], dim=1)
-        labels = torch.zeros(len(logits), dtype=torch.long, device=query.device)
+        labels = torch.zeros(
+            len(logits), dtype=torch.long, device=query.device)
     else:
         # Negative keys are implicitly off-diagonal positive keys.
 
@@ -161,14 +169,15 @@ class CollapsingTransformer(nn.Module):
                 **encoder_kwargs,
             ))
         self.pre_combiner = nn.Sequential(nn.Conv1d(model_dim, output_dims, 1),
-                                          AttentionBlock(output_dims, num_heads=heads, do_checkpoint=False),
+                                          AttentionBlock(
+                                              output_dims, num_heads=heads, do_checkpoint=False),
                                           nn.Conv1d(output_dims, output_dims, 1))
         self.mask_percentage = mask_percentage
 
     def forward(self, x, **transformer_kwargs):
         h = self.transformer(x, **transformer_kwargs)
-        h = h.permute(0,2,1)
-        h = checkpoint(self.pre_combiner, h).permute(0,2,1)
+        h = h.permute(0, 2, 1)
+        h = checkpoint(self.pre_combiner, h).permute(0, 2, 1)
         if self.training:
             mask = torch.rand_like(h.float()) > self.mask_percentage
         else:
@@ -184,7 +193,7 @@ class ConvFormatEmbedding(nn.Module):
 
     def forward(self, x):
         y = self.emb(x)
-        return y.permute(0,2,1)
+        return y.permute(0, 2, 1)
 
 
 class ContrastiveAudio(nn.Module):
@@ -204,7 +213,8 @@ class ContrastiveAudio(nn.Module):
 
         self.emb = nn.Sequential(nn.Conv1d(mel_channels, model_dim // 2, kernel_size=5, stride=2, padding=2),
                                  nn.Conv1d(model_dim//2, model_dim, kernel_size=3, stride=2, padding=1))
-        self.transformer = CollapsingTransformer(model_dim, model_dim, transformer_heads, dropout, encoder_depth, mask_percent)
+        self.transformer = CollapsingTransformer(
+            model_dim, model_dim, transformer_heads, dropout, encoder_depth, mask_percent)
         self.to_latent = ml.Linear(latent_dim, latent_dim, bias=False)
         self.to_latent2 = ml.Linear(latent_dim, latent_dim, bias=False)
 
@@ -219,7 +229,8 @@ class ContrastiveAudio(nn.Module):
         }
 
     def update_for_step(self, step, __):
-        self.to_latent2.weight.data = self.to_latent2.weight.data * .99 + self.to_latent.weight.data * .01
+        self.to_latent2.weight.data = self.to_latent2.weight.data * .99 + \
+            self.to_latent.weight.data * .01
 
     def project(self, mel):
         h1 = self.emb(mel).permute(0, 2, 1)
@@ -237,9 +248,9 @@ class ContrastiveAudio(nn.Module):
         if self.training:
             # Mask out big chunks of separate frequency bands for each clip.
             b, c, _ = mel_input1.shape
-            mask = torch.rand(b,c,1, device=mel_input1.device) > .3
+            mask = torch.rand(b, c, 1, device=mel_input1.device) > .3
             mel_input1 = mask * mel_input1 * (1-random()*.5)
-            mask = torch.rand(b,c,1, device=mel_input2.device) > .3
+            mask = torch.rand(b, c, 1, device=mel_input2.device) > .3
             mel_input2 = mask * mel_input2 * (1-random()*.5)
 
         h1 = self.emb(mel_input1).permute(0, 2, 1)
@@ -261,8 +272,8 @@ def register_contrastive_audio(opt_net, opt):
 
 if __name__ == '__main__':
     clvp = ContrastiveAudio()
-    clvp(torch.randn(2,80,100),
-         torch.randn(2,80,95),
+    clvp(torch.randn(2, 80, 100),
+         torch.randn(2, 80, 95),
          return_loss=True)
-    v = torch.randn(2,512)
-    print(info_nce(v,v))
+    v = torch.randn(2, 512)
+    print(info_nce(v, v))

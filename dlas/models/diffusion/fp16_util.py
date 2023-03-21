@@ -68,7 +68,8 @@ def master_params_to_model_params(param_groups_and_shapes, master_params):
     # silently not copy any parameters.
     for master_param, (param_group, _) in zip(master_params, param_groups_and_shapes):
         for (_, param), unflat_master_param in zip(
-            param_group, unflatten_master_params(param_group, master_param.view(-1))
+            param_group, unflatten_master_params(
+                param_group, master_param.view(-1))
         ):
             param.detach().copy_(unflat_master_param)
 
@@ -99,7 +100,8 @@ def master_params_to_state_dict(
             master_params, param_groups_and_shapes
         ):
             for (name, _), unflat_master_param in zip(
-                param_group, unflatten_master_params(param_group, master_param.view(-1))
+                param_group, unflatten_master_params(
+                    param_group, master_param.view(-1))
             ):
                 assert name in state_dict
                 state_dict[name] = unflat_master_param
@@ -116,10 +118,12 @@ def state_dict_to_master_params(model, state_dict, use_fp16):
         named_model_params = [
             (name, state_dict[name]) for name, _ in model.named_parameters()
         ]
-        param_groups_and_shapes = get_param_groups_and_shapes(named_model_params)
+        param_groups_and_shapes = get_param_groups_and_shapes(
+            named_model_params)
         master_params = make_master_params(param_groups_and_shapes)
     else:
-        master_params = [state_dict[name] for name, _ in model.named_parameters()]
+        master_params = [state_dict[name]
+                         for name, _ in model.named_parameters()]
     return master_params
 
 
@@ -165,7 +169,8 @@ class MixedPrecisionTrainer:
             self.param_groups_and_shapes = get_param_groups_and_shapes(
                 self.model.named_parameters()
             )
-            self.master_params = make_master_params(self.param_groups_and_shapes)
+            self.master_params = make_master_params(
+                self.param_groups_and_shapes)
             self.model.convert_to_fp16()
 
     def zero_grad(self):
@@ -185,8 +190,10 @@ class MixedPrecisionTrainer:
             return self._optimize_normal(opt)
 
     def _optimize_fp16(self, opt: th.optim.Optimizer):
-        model_grads_to_master_grads(self.param_groups_and_shapes, self.master_params)
-        grad_norm, param_norm = self._compute_norms(grad_scale=2 ** self.lg_loss_scale)
+        model_grads_to_master_grads(
+            self.param_groups_and_shapes, self.master_params)
+        grad_norm, param_norm = self._compute_norms(
+            grad_scale=2 ** self.lg_loss_scale)
         if check_overflow(grad_norm):
             self.lg_loss_scale -= 1
             zero_master_grads(self.master_params)
@@ -194,7 +201,8 @@ class MixedPrecisionTrainer:
 
         opt.step(grad_scale=2.0 ** self.lg_loss_scale)
         zero_master_grads(self.master_params)
-        master_params_to_model_params(self.param_groups_and_shapes, self.master_params)
+        master_params_to_model_params(
+            self.param_groups_and_shapes, self.master_params)
         self.lg_loss_scale += self.fp16_scale_growth
         return True
 
@@ -210,7 +218,8 @@ class MixedPrecisionTrainer:
             with th.no_grad():
                 param_norm += th.norm(p, p=2, dtype=th.float32).item() ** 2
                 if p.grad is not None:
-                    grad_norm += th.norm(p.grad, p=2, dtype=th.float32).item() ** 2
+                    grad_norm += th.norm(p.grad, p=2,
+                                         dtype=th.float32).item() ** 2
         return np.sqrt(grad_norm) / grad_scale, np.sqrt(param_norm)
 
     def master_params_to_state_dict(self, master_params):

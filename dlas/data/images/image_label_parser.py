@@ -50,15 +50,15 @@ class VsNetImageLabeler:
 
     def get_labels_as_tensor(self, hq, img_key, resize_factor):
         _, h, w = hq.shape
-        labels = torch.zeros((1,h,w), dtype=torch.long)
-        mask = torch.zeros((1,h,w), dtype=torch.float)
+        labels = torch.zeros((1, h, w), dtype=torch.long)
+        mask = torch.zeros((1, h, w), dtype=torch.float)
         lbl_list = self.labeled_images[img_key]
         for patch_lbl in lbl_list:
             t, l, h, w = patch_lbl['patch_top'] // resize_factor, patch_lbl['patch_left'] // resize_factor, \
-                         patch_lbl['patch_height'] // resize_factor, patch_lbl['patch_width'] // resize_factor
+                patch_lbl['patch_height'] // resize_factor, patch_lbl['patch_width'] // resize_factor
             val = patch_lbl['labelValue']
-            labels[:,t:t+h,l:l+w] = val
-            mask[:,t:t+h,l:l+w] = 1.0
+            labels[:, t:t+h, l:l+w] = val
+            mask[:, t:t+h, l:l+w] = 1.0
         return labels, mask, self.str_labels
 
     def add_label(self, binding, img_name, top, left, dim):
@@ -100,22 +100,23 @@ class CompactJsonLabeler:
                     assert self.config == parsed['config']
                     assert self.labels == parsed['labels']
                     assert self.label_map == parsed['label_map']
-                    self.images.update(parsed['images'])  # This will overwrite existing images, which is acceptable.
+                    # This will overwrite existing images, which is acceptable.
+                    self.images.update(parsed['images'])
 
     def get_labeled_paths(self, base_path):
         return [os.path.join(base_path, pth) for pth in self.images.keys()]
 
     def get_labels_as_tensor(self, hq, img_key, resize_factor):
         _, h, w = hq.shape
-        labels = torch.zeros((1,h,w), dtype=torch.long)
-        mask = torch.zeros((1,h,w), dtype=torch.float)
+        labels = torch.zeros((1, h, w), dtype=torch.long)
+        mask = torch.zeros((1, h, w), dtype=torch.float)
         lbl_list = self.images[img_key]
         for patch_lbl in lbl_list:
             t, l, h, w = patch_lbl['top'] // resize_factor, patch_lbl['left'] // resize_factor, \
-                         self.config['dim'] // resize_factor, self.config['dim'] // resize_factor
+                self.config['dim'] // resize_factor, self.config['dim'] // resize_factor
             val = patch_lbl['labelValue']
-            labels[:,t:t+h,l:l+w] = val
-            mask[:,t:t+h,l:l+w] = 1.0
+            labels[:, t:t+h, l:l+w] = val
+            mask[:, t:t+h, l:l+w] = 1.0
         return labels, mask, self.str_labels
 
     def add_label(self, binding, img_name, top, left, dim):

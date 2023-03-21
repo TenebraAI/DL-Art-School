@@ -1,18 +1,18 @@
-import os.path as osp
-import logging
-import random
 import argparse
+import logging
+import os.path as osp
+import random
 
-import utils
-import utils.options as option
-import utils.util as util
-from models.audio.tts.tacotron2 import sequence_to_text
-from trainer.ExtensibleTrainer import ExtensibleTrainer
-from data import create_dataset, create_dataloader
-from tqdm import tqdm
-import torch
 import numpy as np
+import torch
 from scipy.io import wavfile
+from tqdm import tqdm
+
+import dlas.utils.options as option
+import dlas.utils.util as util
+from dlas.data import create_dataloader, create_dataset
+from dlas.models.audio.tts.tacotron2 import sequence_to_text
+from dlas.trainer.ExtensibleTrainer import ExtensibleTrainer
 
 
 def forward_pass(model, data, output_dir, opt, b):
@@ -38,11 +38,12 @@ if __name__ == "__main__":
     random.seed(5555)
     np.random.seed(5555)
 
-    #### options
+    # options
     torch.backends.cudnn.benchmark = True
     want_metrics = False
     parser = argparse.ArgumentParser()
-    parser.add_argument('-opt', type=str, help='Path to options YAML file.', default='../options/test_gpt_asr_mass.yml')
+    parser.add_argument('-opt', type=str, help='Path to options YAML file.',
+                        default='../options/test_gpt_asr_mass.yml')
     opt = option.parse(parser.parse_args().opt, is_train=False)
     opt = option.dict_to_nonedict(opt)
     utils.util.loaded_options = opt
@@ -58,8 +59,10 @@ if __name__ == "__main__":
     test_loaders = []
     for phase, dataset_opt in sorted(opt['datasets'].items()):
         test_set, collate_fn = create_dataset(dataset_opt, return_collate=True)
-        test_loader = create_dataloader(test_set, dataset_opt, collate_fn=collate_fn)
-        logger.info('Number of test texts in [{:s}]: {:d}'.format(dataset_opt['name'], len(test_set)))
+        test_loader = create_dataloader(
+            test_set, dataset_opt, collate_fn=collate_fn)
+        logger.info('Number of test texts in [{:s}]: {:d}'.format(
+            dataset_opt['name'], len(test_set)))
         test_loaders.append(test_loader)
 
     model = ExtensibleTrainer(opt)
@@ -73,4 +76,3 @@ if __name__ == "__main__":
         for data in tq:
             forward_pass(model, data, dataset_dir, opt, batch)
             batch += 1
-

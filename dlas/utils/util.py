@@ -1,27 +1,26 @@
+import logging
+import math
 import os
 import pathlib
+import random
 import sys
 import time
-import math
-
-import scipy
-import torch.nn.functional as F
-from datetime import datetime
-import random
-import logging
 from collections import OrderedDict
-import numpy as np
+from datetime import datetime
+from shutil import get_terminal_size
+
 import cv2
+import numpy as np
+import paramiko
+import scp
 import torch
+import torch.nn.functional as F
 import torchaudio
 from audio2numpy import open_audio
 from torch import nn
 from torch.nn.parallel import DistributedDataParallel
-from torchvision.utils import make_grid
-from shutil import get_terminal_size
-import scp
-import paramiko
 from torch.utils.checkpoint import checkpoint
+from torchvision.utils import make_grid
 
 try:
     # 1.13.1
@@ -32,14 +31,16 @@ except Exception as e:
 
 import yaml
 
-from trainer import networks
+from dlas.trainer import networks
 
 try:
-    from yaml import CLoader as Loader, CDumper as Dumper
+    from yaml import CDumper as Dumper
+    from yaml import CLoader as Loader
 except ImportError:
-    from yaml import Loader, Dumper
+    from yaml import Dumper, Loader
 
 loaded_options = None
+
 
 def OrderedYaml():
     '''yaml orderedDict support'''
@@ -65,32 +66,39 @@ def checkpoint(fn, *args):
     if loaded_options is None:
         enabled = False
     else:
-        enabled = loaded_options['checkpointing_enabled'] if 'checkpointing_enabled' in loaded_options.keys() else True
+        enabled = loaded_options['checkpointing_enabled'] if 'checkpointing_enabled' in loaded_options.keys(
+        ) else True
     if enabled:
         return torch.utils.checkpoint.checkpoint(fn, *args)
     else:
         return fn(*args)
 
+
 def sequential_checkpoint(fn, partitions, *args):
     if loaded_options is None:
         enabled = False
     else:
-        enabled = loaded_options['checkpointing_enabled'] if 'checkpointing_enabled' in loaded_options.keys() else True
+        enabled = loaded_options['checkpointing_enabled'] if 'checkpointing_enabled' in loaded_options.keys(
+        ) else True
     if enabled:
         return torch.utils.checkpoint.checkpoint_sequential(fn, partitions, *args)
     else:
         return fn(*args)
 
 # A fancy alternative to if <flag> checkpoint() else <call>
+
+
 def possible_checkpoint(opt_en, fn, *args):
     if loaded_options is None:
         enabled = False
     else:
-        enabled = loaded_options['checkpointing_enabled'] if 'checkpointing_enabled' in loaded_options.keys() else True
+        enabled = loaded_options['checkpointing_enabled'] if 'checkpointing_enabled' in loaded_options.keys(
+        ) else True
     if enabled and opt_en:
         return torch.utils.checkpoint.checkpoint(fn, *args)
     else:
         return fn(*args)
+
 
 def get_timestamp():
     return datetime.now().strftime('%y%m%d-%H%M%S')
@@ -114,7 +122,8 @@ def mkdir_and_rename(path):
         new_name = path + '_archived_' + get_timestamp()
         print('Path already exists. Rename it to [{:s}]'.format(new_name))
         logger = logging.getLogger('base')
-        logger.info('Path already exists. Rename it to [{:s}]'.format(new_name))
+        logger.info(
+            'Path already exists. Rename it to [{:s}]'.format(new_name))
         os.rename(path, new_name)
     os.makedirs(path)
 
@@ -133,7 +142,8 @@ def setup_logger(logger_name, root, phase, level=logging.INFO, screen=False, tof
                                   datefmt='%y-%m-%d %H:%M:%S')
     lg.setLevel(level)
     if tofile:
-        log_file = os.path.join(root, phase + '_{}.log'.format(get_timestamp()))
+        log_file = os.path.join(
+            root, phase + '_{}.log'.format(get_timestamp()))
         fh = logging.FileHandler(log_file, mode='w')
         fh.setFormatter(formatter)
         lg.addHandler(fh)
@@ -142,6 +152,7 @@ def setup_logger(logger_name, root, phase, level=logging.INFO, screen=False, tof
         sh.setFormatter(formatter)
         lg.addHandler(sh)
 
+
 def copy_files_to_server(host, user, password, files, remote_path):
     client = paramiko.SSHClient()
     client.load_system_host_keys()
@@ -149,6 +160,7 @@ def copy_files_to_server(host, user, password, files, remote_path):
     client.connect(host, username=user, password=password)
     scpclient = scp.SCPClient(client.get_transport())
     scpclient.put(files, remote_path)
+
 
 def get_files_from_server(host, user, password, remote_path, local_path):
     client = paramiko.SSHClient()
@@ -161,6 +173,8 @@ def get_files_from_server(host, user, password, remote_path, local_path):
 ####################
 # image convert
 ####################
+
+
 def crop_border(img_list, crop_border):
     """Crop borders of images
     Args:
@@ -183,11 +197,13 @@ def tensor2img(tensor, out_type=np.uint8, min_max=(0, 1)):
     Output: 3D(H,W,C) or 2D(H,W), [0,255], np.uint8 (default)
     '''
     tensor = tensor.squeeze().float().cpu().clamp_(*min_max)  # clamp
-    tensor = (tensor - min_max[0]) / (min_max[1] - min_max[0])  # to range [0,1]
+    tensor = (tensor - min_max[0]) / \
+        (min_max[1] - min_max[0])  # to range [0,1]
     n_dim = tensor.dim()
     if n_dim == 4:
         n_img = len(tensor)
-        img_np = make_grid(tensor, nrow=int(math.sqrt(n_img)), normalize=False).numpy()
+        img_np = make_grid(tensor, nrow=int(
+            math.sqrt(n_img)), normalize=False).numpy()
         img_np = np.transpose(img_np[[2, 1, 0], :, :], (1, 2, 0))  # HWC, BGR
     elif n_dim == 3:
         img_np = tensor.numpy()
@@ -227,14 +243,16 @@ def DUF_downsample(x, scale=4):
 
     B, T, C, H, W = x.size()
     x = x.view(-1, 1, H, W)
-    pad_w, pad_h = 6 + scale * 2, 6 + scale * 2  # 6 is the pad of the gaussian filter
+    pad_w, pad_h = 6 + scale * 2, 6 + scale * \
+        2  # 6 is the pad of the gaussian filter
     r_h, r_w = 0, 0
     if scale == 3:
         r_h = 3 - (H % 3)
         r_w = 3 - (W % 3)
     x = F.pad(x, [pad_w, pad_w + r_w, pad_h, pad_h + r_h], 'reflect')
 
-    gaussian_filter = torch.from_numpy(gkern(13, 0.4 * scale)).type_as(x).unsqueeze(0).unsqueeze(0)
+    gaussian_filter = torch.from_numpy(
+        gkern(13, 0.4 * scale)).type_as(x).unsqueeze(0).unsqueeze(0)
     x = F.conv2d(x, gaussian_filter, stride=scale)
     x = x[:, :, 2:-2, 2:-2]
     x = x.view(B, T, C, x.size(2), x.size(3))
@@ -352,7 +370,8 @@ class ProgressBar(object):
     def __init__(self, task_num=0, bar_width=50, start=True):
         self.task_num = task_num
         max_bar_width = self._get_max_bar_width()
-        self.bar_width = (bar_width if bar_width <= max_bar_width else max_bar_width)
+        self.bar_width = (bar_width if bar_width <=
+                          max_bar_width else max_bar_width)
         self.completed = 0
         if start:
             self.start()
@@ -385,7 +404,8 @@ class ProgressBar(object):
             mark_width = int(self.bar_width * percentage)
             bar_chars = '>' * mark_width + '-' * (self.bar_width - mark_width)
             sys.stdout.write('\033[2F')  # cursor up 2 lines
-            sys.stdout.write('\033[J')  # clean the output (remove extra chars since last display)
+            # clean the output (remove extra chars since last display)
+            sys.stdout.write('\033[J')
             sys.stdout.write('[{}] {}/{}, {:.1f} task/s, elapsed: {}s, ETA: {:5}s\n{}\n'.format(
                 bar_chars, self.completed, self.task_num, fps, int(elapsed + 0.5), eta, msg))
         else:
@@ -409,6 +429,7 @@ def recursively_detach(v):
             out[k] = recursively_detach(t)
         return out
 
+
 def opt_get(opt, keys, default=None):
     assert not isinstance(keys, str)  # Common mistake, better to assert.
     if opt is None:
@@ -431,7 +452,8 @@ def denormalize(x, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
 def get_mask_from_lengths(lengths, max_len=None):
     if max_len is None:
         max_len = torch.max(lengths).item()
-    ids = torch.arange(0, max_len, out=torch.LongTensor(max_len)).to(lengths.device)
+    ids = torch.arange(0, max_len, out=torch.LongTensor(
+        max_len)).to(lengths.device)
     mask = (ids < lengths.unsqueeze(1)).bool()
     return mask
 
@@ -469,9 +491,11 @@ def clip_grad_norm(parameters: list, parameter_names: list, max_norm: float, nor
     device = parameters[0].grad.device
     if norm_type == inf:
         norms = [p.grad.detach().abs().max().to(device) for p in parameters]
-        total_norm = norms[0] if len(norms) == 1 else torch.max(torch.stack(norms))
+        total_norm = norms[0] if len(
+            norms) == 1 else torch.max(torch.stack(norms))
     else:
-        total_norm = torch.norm(torch.stack([torch.norm(p.grad.detach(), norm_type).to(device) for p in parameters]), norm_type)
+        total_norm = torch.norm(torch.stack([torch.norm(
+            p.grad.detach(), norm_type).to(device) for p in parameters]), norm_type)
     clip_coef = max_norm / (total_norm + 1e-6)
     if clip_coef < 1:
         for p in parameters:
@@ -480,6 +504,8 @@ def clip_grad_norm(parameters: list, parameter_names: list, max_norm: float, nor
 
 
 Loader, Dumper = OrderedYaml()
+
+
 def load_model_from_config(cfg_file=None, model_name=None, also_load_savepoint=True, load_path=None,
                            preloaded_options=None, strict_load=True, device=None):
     if preloaded_options is not None:
@@ -512,12 +538,15 @@ def map_cuda_to_correct_device(storage, loc):
     else:
         return storage.cpu()
 
+
 def list_to_device(l, dev):
     return [anything_to_device(e, dev) for e in l]
 
+
 def map_to_device(m, dev):
-    return {k: anything_to_device(v, dev) for k,v in m.items()}
-    
+    return {k: anything_to_device(v, dev) for k, v in m.items()}
+
+
 def anything_to_device(obj, dev):
     if isinstance(obj, list):
         return list_to_device(obj, dev)
@@ -555,9 +584,9 @@ def optimizer_to(opt, device):
                     if subparam._grad is not None:
                         subparam._grad.data = subparam._grad.data.to(device)
 
-#''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-#'''                       AUDIO UTILS                          '''
-#''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+# ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+# '''                       AUDIO UTILS                          '''
+# ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 
 def find_audio_files(base_path, globs=['*.wav', '*.mp3', '*.ogg', '*.flac']):
@@ -585,9 +614,10 @@ def load_audio(audiopath, sampling_rate, raw_data=None):
             from pydub import AudioSegment
             asg = AudioSegment.from_file(audiopath)
             dtype = getattr(np, "int{:d}".format(asg.sample_width * 8))
-            arr = np.ndarray((int(asg.frame_count()), asg.channels), buffer=asg.raw_data, dtype=dtype)
+            arr = np.ndarray((int(asg.frame_count()), asg.channels),
+                             buffer=asg.raw_data, dtype=dtype)
             arr = arr.astype('float') / (2 ** (asg.sample_width * 8 - 1))
-            arr = arr[:,0]
+            arr = arr[:, 0]
             audio = torch.FloatTensor(arr)
             lsr = asg.frame_rate
         else:
@@ -633,7 +663,8 @@ def load_wav_to_torch(full_path):
     elif data.dtype == np.float16 or data.dtype == np.float32:
         norm_fix = 1.
     else:
-        raise NotImplemented(f"Provided data dtype not supported: {data.dtype}")
+        raise NotImplemented(
+            f"Provided data dtype not supported: {data.dtype}")
     return (torch.FloatTensor(data.astype(np.float32)) / norm_fix, sampling_rate)
 
 
@@ -647,5 +678,6 @@ def get_network_description(network):
 def print_network(net, name='some network'):
     s, n = get_network_description(net)
     net_struc_str = '{}'.format(net.__class__.__name__)
-    print('Network {} structure: {}, with parameters: {:,d}'.format(name, net_struc_str, n))
+    print('Network {} structure: {}, with parameters: {:,d}'.format(
+        name, net_struc_str, n))
     print(s)

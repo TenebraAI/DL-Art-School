@@ -1,24 +1,26 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch_intermediary as ml
-
 from transformers import GPT2Config, GPT2PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 from transformers.models.gpt2.modeling_gpt2 import GPT2Attention
-from transformers.utils.model_parallel_utils import get_device_map, assert_device_map
+from transformers.utils.model_parallel_utils import (assert_device_map,
+                                                     get_device_map)
 
-from models.arch_util import AttentionBlock
-from models.audio.tts.transformer_builders import build_hf_gpt_transformer
-from models.lucidrains.x_transformers import RotaryEmbedding, apply_rotary_pos_emb
-from trainer.networks import register_model
-from utils.util import opt_get
+import dlas.torch_intermediary as ml
+from dlas.models.arch_util import AttentionBlock
+from dlas.models.audio.tts.transformer_builders import build_hf_gpt_transformer
+from dlas.models.lucidrains.x_transformers import (RotaryEmbedding,
+                                                   apply_rotary_pos_emb)
+from dlas.trainer.networks import register_model
+from dlas.utils.util import opt_get
 
 
 class ResBlock(nn.Module):
     """
     Basic residual convolutional block that uses GroupNorm.
     """
+
     def __init__(self, chan):
         super().__init__()
         self.net = nn.Sequential(
@@ -48,7 +50,8 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
 
     def parallelize(self, device_map=None):
         self.device_map = (
-            get_device_map(len(self.transformer.h), range(torch.cuda.device_count()))
+            get_device_map(len(self.transformer.h),
+                           range(torch.cuda.device_count()))
             if device_map is None
             else device_map
         )
@@ -120,7 +123,8 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
     ):
         assert self.cached_prior_emb is not None
         assert inputs_embeds is None  # Not supported by this inference model.
-        assert labels is None  # Training not supported by this inference model.
+        # Training not supported by this inference model.
+        assert labels is None
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         # Create embedding
@@ -128,15 +132,18 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
         if input_ids.shape[1] != 1:
             posterior_inputs = input_ids[:, prior_len:]
             posterior_emb = self.embeddings(posterior_inputs)
-            posterior_emb = posterior_emb + self.posterior_pos_embedding(posterior_emb)
+            posterior_emb = posterior_emb + \
+                self.posterior_pos_embedding(posterior_emb)
             if self.cached_prior_emb.shape[0] != posterior_emb.shape[0]:
-                prior_emb = self.cached_prior_emb.repeat_interleave(posterior_emb.shape[0] // self.cached_prior_emb.shape[0], 0)
+                prior_emb = self.cached_prior_emb.repeat_interleave(
+                    posterior_emb.shape[0] // self.cached_prior_emb.shape[0], 0)
             else:
                 prior_emb = self.cached_prior_emb
             emb = torch.cat([prior_emb, posterior_emb], dim=1)
         else:
             emb = self.embeddings(input_ids)
-            emb = emb + self.posterior_pos_embedding.get_fixed_embedding(attention_mask.shape[1] - prior_len, attention_mask.device)
+            emb = emb + self.posterior_pos_embedding.get_fixed_embedding(
+                attention_mask.shape[1] - prior_len, attention_mask.device)
 
         transformer_outputs = self.transformer(
             inputs_embeds=emb,
@@ -181,7 +188,8 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
         called. This is required to match :obj:`past_key_values` with the correct beam_idx at every generation step.
         """
         return tuple(
-            tuple(past_state.index_select(0, beam_idx.to(past_state.device)) for past_state in layer_past)
+            tuple(past_state.index_select(0, beam_idx.to(past_state.device))
+                  for past_state in layer_past)
             for layer_past in past
         )
 
@@ -198,7 +206,8 @@ class ConditioningEncoder(nn.Module):
         attn = []
         self.init = nn.Conv1d(spec_dim, embedding_dim, kernel_size=1)
         for a in range(attn_blocks):
-            attn.append(AttentionBlock(embedding_dim, num_attn_heads, do_checkpoint=do_checkpointing))
+            attn.append(AttentionBlock(embedding_dim,
+                        num_attn_heads, do_checkpoint=do_checkpointing))
         self.attn = nn.Sequential(*attn)
         self.dim = embedding_dim
         self.do_checkpointing = do_checkpointing
@@ -218,23 +227,27 @@ class MelEncoder(nn.Module):
         super().__init__()
         self.channels = channels
         self.encoder = nn.Sequential(nn.Conv1d(mel_channels, channels//4, kernel_size=3, padding=1),
-                                     nn.Sequential(*[ResBlock(channels//4) for _ in range(resblocks_per_reduction)]),
-                                     nn.Conv1d(channels//4, channels//2, kernel_size=3, stride=2, padding=1),
+                                     nn.Sequential(
+                                         *[ResBlock(channels//4) for _ in range(resblocks_per_reduction)]),
+                                     nn.Conv1d(channels//4, channels//2,
+                                               kernel_size=3, stride=2, padding=1),
                                      nn.GroupNorm(channels//16, channels//2),
                                      nn.ReLU(),
-                                     nn.Sequential(*[ResBlock(channels//2) for _ in range(resblocks_per_reduction)]),
-                                     nn.Conv1d(channels//2, channels, kernel_size=3, stride=2, padding=1),
+                                     nn.Sequential(
+                                         *[ResBlock(channels//2) for _ in range(resblocks_per_reduction)]),
+                                     nn.Conv1d(channels//2, channels,
+                                               kernel_size=3, stride=2, padding=1),
                                      nn.GroupNorm(channels//8, channels),
                                      nn.ReLU(),
-                                     nn.Sequential(*[ResBlock(channels) for _ in range(resblocks_per_reduction)]),
+                                     nn.Sequential(
+                                         *[ResBlock(channels) for _ in range(resblocks_per_reduction)]),
                                      )
         self.reduction = 4
-
 
     def forward(self, x):
         for e in self.encoder:
             x = e(x)
-        return x.permute(0,2,1)
+        return x.permute(0, 2, 1)
 
 
 class UnifiedVoice(nn.Module):
@@ -260,7 +273,8 @@ class UnifiedVoice(nn.Module):
         super().__init__()
 
         self.number_text_tokens = number_text_tokens
-        self.start_text_token = number_text_tokens * types if start_text_token is None else start_text_token
+        self.start_text_token = number_text_tokens * \
+            types if start_text_token is None else start_text_token
         self.stop_text_token = 0
         self.number_mel_codes = number_mel_codes
         self.start_mel_token = start_mel_token
@@ -268,17 +282,21 @@ class UnifiedVoice(nn.Module):
         self.layers = layers
         self.heads = heads
         self.max_conditioning_inputs = max_conditioning_inputs
-        self.max_mel_tokens = -1 if max_mel_tokens == -1 else max_mel_tokens+2+self.max_conditioning_inputs
+        self.max_mel_tokens = -1 if max_mel_tokens == - \
+            1 else max_mel_tokens+2+self.max_conditioning_inputs
         self.max_text_tokens = -1 if max_text_tokens == -1 else max_text_tokens+2
         self.model_dim = model_dim
         self.mel_length_compression = mel_length_compression
-        self.conditioning_encoder = ConditioningEncoder(80, model_dim, num_attn_heads=heads)
+        self.conditioning_encoder = ConditioningEncoder(
+            80, model_dim, num_attn_heads=heads)
         # nn.Embedding
-        self.text_embedding = ml.Embedding(self.number_text_tokens*types+1, model_dim)
+        self.text_embedding = ml.Embedding(
+            self.number_text_tokens*types+1, model_dim)
         # nn.Embedding
         self.mel_embedding = ml.Embedding(self.number_mel_codes, model_dim)
         self.gpt, self.mel_pos_embedding, self.text_pos_embedding, self.mel_layer_pos_embedding, self.text_layer_pos_embedding = \
-            build_hf_gpt_transformer(layers, model_dim, heads, self.max_mel_tokens, self.max_text_tokens, checkpointing)
+            build_hf_gpt_transformer(
+                layers, model_dim, heads, self.max_mel_tokens, self.max_text_tokens, checkpointing)
 
         self.final_norm = nn.LayerNorm(model_dim)
         self.text_head = ml.Linear(model_dim, self.number_text_tokens*types+1)
@@ -306,8 +324,8 @@ class UnifiedVoice(nn.Module):
         }
 
     def build_aligned_inputs_and_targets(self, input, start_token, stop_token):
-        inp = F.pad(input, (1,0), value=start_token)
-        tar = F.pad(input, (0,1), value=stop_token)
+        inp = F.pad(input, (1, 0), value=start_token)
+        tar = F.pad(input, (0, 1), value=stop_token)
         return inp, tar
 
     def set_mel_padding(self, mel_input_tokens, wav_lengths):
@@ -319,44 +337,47 @@ class UnifiedVoice(nn.Module):
         # Set padding areas within MEL (currently it is coded with the MEL code for <zero>).
         mel_lengths = wav_lengths // self.mel_length_compression
         for b in range(len(mel_lengths)):
-            actual_end = mel_lengths[b] + 1  # Due to the convolutional nature of how these tokens are generated, it would be best if the model predicts a token past the actual last token.
+            # Due to the convolutional nature of how these tokens are generated, it would be best if the model predicts a token past the actual last token.
+            actual_end = mel_lengths[b] + 1
             if actual_end < mel_input_tokens.shape[-1]:
                 mel_input_tokens[b, actual_end:] = self.stop_mel_token
         return mel_input_tokens
 
     def get_logits(self, speech_conditioning_inputs, text_inputs, text_head, mel_inputs, mel_head, aligned_head, return_latent=False):
         if mel_inputs is not None:
-            emb = torch.cat([speech_conditioning_inputs, text_inputs, mel_inputs], dim=1)
+            emb = torch.cat([speech_conditioning_inputs,
+                            text_inputs, mel_inputs], dim=1)
         else:
             emb = torch.cat([speech_conditioning_inputs, text_inputs], dim=1)
 
         gpt_out = self.gpt(inputs_embeds=emb, return_dict=True)
 
-        enc = gpt_out.last_hidden_state[:, 1:]  # The first logit is tied to the speech_conditioning_input
+        # The first logit is tied to the speech_conditioning_input
+        enc = gpt_out.last_hidden_state[:, 1:]
         enc = self.final_norm(enc)
 
         if return_latent:
             return enc[:, speech_conditioning_inputs.shape[1]:speech_conditioning_inputs.shape[1] + text_inputs.shape[1]], enc[:, -mel_inputs.shape[1]:]
 
         text_logits = enc[:, :text_inputs.shape[1]]
-        text_logits = text_head(text_logits).permute(0,2,1)
+        text_logits = text_head(text_logits).permute(0, 2, 1)
 
         mel_logits = enc[:, -mel_inputs.shape[1]:]
-        aligned_logits = aligned_head(mel_logits).permute(0,2,1)
-        mel_logits = mel_head(mel_logits).permute(0,2,1)
+        aligned_logits = aligned_head(mel_logits).permute(0, 2, 1)
+        mel_logits = mel_head(mel_logits).permute(0, 2, 1)
 
         return text_logits, mel_logits, aligned_logits
 
-
     def get_conditioning_latent(self, speech_conditioning_input):
-        speech_conditioning_input = speech_conditioning_input.unsqueeze(1) if len(speech_conditioning_input.shape) == 3 else speech_conditioning_input
+        speech_conditioning_input = speech_conditioning_input.unsqueeze(1) if len(
+            speech_conditioning_input.shape) == 3 else speech_conditioning_input
         conds = []
         for j in range(speech_conditioning_input.shape[1]):
-            conds.append(self.conditioning_encoder(speech_conditioning_input[:, j]))
+            conds.append(self.conditioning_encoder(
+                speech_conditioning_input[:, j]))
         conds = torch.stack(conds, dim=1)
         conds = conds.mean(dim=1).unsqueeze(1)
         return conds
-
 
     def forward(self, speech_conditioning_input, text_inputs, text_lengths, mel_codes, wav_lengths, aligned_codes, types=None, return_latent=False):
         """
@@ -376,19 +397,22 @@ class UnifiedVoice(nn.Module):
         if types is not None:
             text_inputs = text_inputs * (1+types).unsqueeze(-1)
 
-
         conds = self.get_conditioning_latent(speech_conditioning_input)
 
         ac_expansion_factor = mel_codes.shape[-1] / aligned_codes.shape[-1]
         aligned_codes = aligned_codes.repeat(1, ac_expansion_factor)
-        _, aligned_targets = self.build_aligned_inputs_and_targets(aligned_codes, 0, 0)
+        _, aligned_targets = self.build_aligned_inputs_and_targets(
+            aligned_codes, 0, 0)
 
-        text_inputs = F.pad(text_inputs, (0,1), value=self.stop_text_token)
-        text_inputs, text_targets = self.build_aligned_inputs_and_targets(text_inputs, self.start_text_token, self.stop_text_token)
-        text_emb = self.text_embedding(text_inputs) + self.text_pos_embedding(text_inputs)
+        text_inputs = F.pad(text_inputs, (0, 1), value=self.stop_text_token)
+        text_inputs, text_targets = self.build_aligned_inputs_and_targets(
+            text_inputs, self.start_text_token, self.stop_text_token)
+        text_emb = self.text_embedding(
+            text_inputs) + self.text_pos_embedding(text_inputs)
 
         mel_codes = self.set_mel_padding(mel_codes, wav_lengths)
-        mel_codes, mel_targets = self.build_aligned_inputs_and_targets(mel_codes, self.start_mel_token, self.stop_mel_token)
+        mel_codes, mel_targets = self.build_aligned_inputs_and_targets(
+            mel_codes, self.start_mel_token, self.stop_mel_token)
         mel_inp = mel_codes
         mel_emb = self.mel_embedding(mel_inp)
         mel_emb = mel_emb + self.mel_pos_embedding(mel_codes)
@@ -396,7 +420,8 @@ class UnifiedVoice(nn.Module):
         text_logits, mel_logits, aligned_logits = self.get_logits(conds, text_emb, self.text_head, mel_emb, self.mel_head,
                                                                   self.aligned_head, return_latent=return_latent)
         if return_latent:
-            return mel_logits[:, :-2]  # Despite the name, these are not logits. Strip off the two tokens added by this forward pass.
+            # Despite the name, these are not logits. Strip off the two tokens added by this forward pass.
+            return mel_logits[:, :-2]
 
         loss_text = F.cross_entropy(text_logits, text_targets.long())
         loss_mel = F.cross_entropy(mel_logits, mel_targets.long())
@@ -418,25 +443,31 @@ class UnifiedVoice(nn.Module):
                                     n_head=self.heads,
                                     gradient_checkpointing=False,
                                     use_cache=True)
-            self.inference_model = GPT2InferenceModel(gpt_config, self.gpt, self.mel_pos_embedding, self.mel_embedding, self.final_norm, self.mel_head)
+            self.inference_model = GPT2InferenceModel(
+                gpt_config, self.gpt, self.mel_pos_embedding, self.mel_embedding, self.final_norm, self.mel_head)
             self.gpt.wte = self.mel_embedding
 
         text_inputs = F.pad(text_inputs, (0, 1), value=self.stop_text_token)
-        text_inputs, text_targets = self.build_aligned_inputs_and_targets(text_inputs, self.start_text_token, self.stop_text_token)
-        text_emb = self.text_embedding(text_inputs) + self.text_pos_embedding(text_inputs)
+        text_inputs, text_targets = self.build_aligned_inputs_and_targets(
+            text_inputs, self.start_text_token, self.stop_text_token)
+        text_emb = self.text_embedding(
+            text_inputs) + self.text_pos_embedding(text_inputs)
 
-        speech_conditioning_input = speech_conditioning_input.unsqueeze(1) if len(speech_conditioning_input.shape) == 3 else speech_conditioning_input
+        speech_conditioning_input = speech_conditioning_input.unsqueeze(1) if len(
+            speech_conditioning_input.shape) == 3 else speech_conditioning_input
         conds = []
         for j in range(speech_conditioning_input.shape[1]):
-            conds.append(self.conditioning_encoder(speech_conditioning_input[:, j]))
+            conds.append(self.conditioning_encoder(
+                speech_conditioning_input[:, j]))
         conds = torch.stack(conds, dim=1)
         conds = conds.mean(dim=1).unsqueeze(1)
 
         emb = torch.cat([conds, text_emb], dim=1)
         self.inference_model.store_prior_emb(emb)
 
-        fake_inputs = torch.full((emb.shape[0], conds.shape[1]+emb.shape[1],), fill_value=1, dtype=torch.long, device=text_inputs.device)
-        fake_inputs[:,-1] = self.start_mel_token
+        fake_inputs = torch.full((emb.shape[0], conds.shape[1]+emb.shape[1],),
+                                 fill_value=1, dtype=torch.long, device=text_inputs.device)
+        fake_inputs[:, -1] = self.start_mel_token
 
         gen = self.inference_model.generate(fake_inputs, bos_token_id=self.start_mel_token, pad_token_id=self.stop_mel_token, eos_token_id=self.stop_mel_token,
                                             max_length=seq_length, return_dict_in_generate=True, **hf_generate_kwargs)
@@ -449,11 +480,12 @@ def register_unified_voice3(opt_net, opt):
 
 
 if __name__ == '__main__':
-    gpt = UnifiedVoice(model_dim=256, heads=4, max_conditioning_inputs=4, types=2)
-    mel = torch.randint(high=8192, size=(2,250))
-    ac = torch.randint(high=256, size=(2,250*1024//443))
+    gpt = UnifiedVoice(model_dim=256, heads=4,
+                       max_conditioning_inputs=4, types=2)
+    mel = torch.randint(high=8192, size=(2, 250))
+    ac = torch.randint(high=256, size=(2, 250*1024//443))
     l = gpt(torch.randn(2, 3, 80, 800),
-            torch.randint(high=256, size=(2,120)),
+            torch.randint(high=256, size=(2, 120)),
             torch.tensor([32, 120]),
-            mel, torch.tensor([250*256,195*256]), ac,
+            mel, torch.tensor([250*256, 195*256]), ac,
             types=torch.tensor([0, 1]))

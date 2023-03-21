@@ -1,11 +1,10 @@
 import torch
 import torch.nn as nn
-
 import torch.nn.functional as F
 
-from trainer.networks import register_model
-from utils.util import checkpoint, opt_get
-import torch_intermediary as ml
+import dlas.torch_intermediary as ml
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint, opt_get
 
 
 class Discriminator_VGG_128(nn.Module):
@@ -47,7 +46,8 @@ class Discriminator_VGG_128(nn.Module):
             input_img_factor = input_img_factor // 2
             final_nf = nf * 16
 
-        self.linear1 = ml.Linear(final_nf * 4 * input_img_factor * 4 * input_img_factor, 100)
+        self.linear1 = ml.Linear(
+            final_nf * 4 * input_img_factor * 4 * input_img_factor, 100)
         self.linear2 = ml.Linear(100, 1)
 
         # activation function
@@ -57,11 +57,11 @@ class Discriminator_VGG_128(nn.Module):
         fea = self.lrelu(self.conv0_0(x))
         fea = self.lrelu(self.bn0_1(self.conv0_1(fea)))
 
-        #fea = torch.cat([fea, skip_med], dim=1)
+        # fea = torch.cat([fea, skip_med], dim=1)
         fea = self.lrelu(self.bn1_0(self.conv1_0(fea)))
         fea = self.lrelu(self.bn1_1(self.conv1_1(fea)))
 
-        #fea = torch.cat([fea, skip_lo], dim=1)
+        # fea = torch.cat([fea, skip_lo], dim=1)
         fea = self.lrelu(self.bn2_0(self.conv2_0(fea)))
         fea = self.lrelu(self.bn2_1(self.conv2_1(fea)))
 
@@ -130,18 +130,19 @@ class Discriminator_VGG_128_GN(nn.Module):
         # activation function
         self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
 
-        self.linear1 = ml.Linear(int(final_nf * 4 * input_img_factor * 4 * input_img_factor), 100)
+        self.linear1 = ml.Linear(
+            int(final_nf * 4 * input_img_factor * 4 * input_img_factor), 100)
         self.linear2 = ml.Linear(100, 1)
 
     def compute_body(self, x):
         fea = self.lrelu(self.conv0_0(x))
         fea = self.lrelu(self.bn0_1(self.conv0_1(fea)))
 
-        #fea = torch.cat([fea, skip_med], dim=1)
+        # fea = torch.cat([fea, skip_med], dim=1)
         fea = self.lrelu(self.bn1_0(self.conv1_0(fea)))
         fea = self.lrelu(self.bn1_1(self.conv1_1(fea)))
 
-        #fea = torch.cat([fea, skip_lo], dim=1)
+        # fea = torch.cat([fea, skip_lo], dim=1)
         fea = self.lrelu(self.bn2_0(self.conv2_0(fea)))
         fea = self.lrelu(self.bn2_1(self.conv2_1(fea)))
 
@@ -171,7 +172,8 @@ class Discriminator_VGG_128_GN(nn.Module):
 def register_discriminator_vgg_128_gn(opt_net, opt):
     return Discriminator_VGG_128_GN(in_nc=opt_net['in_nc'], nf=opt_net['nf'],
                                     input_img_factor=opt_net['image_size'] / 128,
-                                    extra_conv=opt_get(opt_net, ['extra_conv'], False),
+                                    extra_conv=opt_get(
+                                        opt_net, ['extra_conv'], False),
                                     do_checkpointing=opt_get(opt_net, ['do_checkpointing'], False))
 
 

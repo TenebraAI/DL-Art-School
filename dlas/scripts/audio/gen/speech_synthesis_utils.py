@@ -3,14 +3,15 @@ import random
 
 import torch
 
-from data.audio.unsupervised_audio_dataset import load_audio
-from data.util import find_files_of_type, is_audio_file
-from models.audio.vocoders.univnet.generator import UnivNetGenerator
-from models.diffusion.gaussian_diffusion import get_named_beta_schedule
-from models.diffusion.respace import SpacedDiffusion, space_timesteps
-from trainer.injectors.audio_injectors import TorchMelSpectrogramInjector, MelSpectrogramInjector
-from utils.audio import plot_spectrogram
-from utils.util import load_model_from_config
+from dlas.data.audio.unsupervised_audio_dataset import load_audio
+from dlas.data.util import find_files_of_type, is_audio_file
+from dlas.models.audio.vocoders.univnet.generator import UnivNetGenerator
+from dlas.models.diffusion.gaussian_diffusion import get_named_beta_schedule
+from dlas.models.diffusion.respace import SpacedDiffusion, space_timesteps
+from dlas.trainer.injectors.audio_injectors import (
+    MelSpectrogramInjector, TorchMelSpectrogramInjector)
+from dlas.utils.audio import plot_spectrogram
+from dlas.utils.util import load_model_from_config
 
 
 def load_speech_dvae():
@@ -22,7 +23,8 @@ def load_speech_dvae():
 
 def load_univnet_vocoder():
     model = UnivNetGenerator()
-    sd = torch.load('../experiments/univnet_c32_pretrained_libri.pt', map_location='cpu')
+    sd = torch.load(
+        '../experiments/univnet_c32_pretrained_libri.pt', map_location='cpu')
     model.load_state_dict(sd['model_g'])
     model = model.cpu()
     model.eval(inference=True)
@@ -32,10 +34,11 @@ def load_univnet_vocoder():
 def load_clvp():
     from models.clip.text_voice_clip import VoiceCLIP
     clvp = VoiceCLIP(dim_text=768, dim_speech=768, dim_latent=768, num_text_tokens=256, text_enc_depth=20,
-                          text_seq_len=350, text_heads=12, num_speech_tokens=8192, speech_enc_depth=20,
-                          speech_heads=12, speech_seq_len=430, text_mask_percentage=0, voice_mask_percentage=0,
-                          use_xformers=True)
-    clvp.load_state_dict(torch.load(f"../experiments/clvp_md.pth", map_location=torch.device('cpu')))
+                     text_seq_len=350, text_heads=12, num_speech_tokens=8192, speech_enc_depth=20,
+                     speech_heads=12, speech_seq_len=430, text_mask_percentage=0, voice_mask_percentage=0,
+                     use_xformers=True)
+    clvp.load_state_dict(torch.load(
+        f"../experiments/clvp_md.pth", map_location=torch.device('cpu')))
     clvp = clvp.eval()
     return clvp
 
@@ -44,7 +47,7 @@ def wav_to_mel(wav, mel_norms_file='../experiments/clips_mel_norms.pth'):
     """
     Converts an audio clip into a MEL tensor that the vocoder, DVAE and GptTts models use whenever a MEL is called for.
     """
-    return TorchMelSpectrogramInjector({'in': 'wav', 'out': 'mel', 'mel_norm_file': mel_norms_file},{})({'wav': wav})['mel']
+    return TorchMelSpectrogramInjector({'in': 'wav', 'out': 'mel', 'mel_norm_file': mel_norms_file}, {})({'wav': wav})['mel']
 
 
 def wav_to_univnet_mel(wav, do_normalization=False):
@@ -53,7 +56,7 @@ def wav_to_univnet_mel(wav, do_normalization=False):
     """
     return MelSpectrogramInjector({'in': 'wav', 'out': 'mel', 'sampling_rate': 24000,
                                    'n_mel_channels': 100, 'mel_fmax': 12000,
-                                   'do_normalization': do_normalization},{})({'wav': wav})['mel']
+                                   'do_normalization': do_normalization}, {})({'wav': wav})['mel']
 
 
 def convert_mel_to_codes(dvae_model, mel):
@@ -66,10 +69,13 @@ def convert_mel_to_codes(dvae_model, mel):
 
 
 def load_gpt_conditioning_inputs_from_directory(path, num_candidates=3, sample_rate=22050, max_samples=44100):
-    candidates = find_files_of_type('img', os.path.dirname(path), qualifier=is_audio_file)[0]
-    assert len(candidates) < 50000  # Sanity check to ensure we aren't loading "related files" that aren't actually related.
+    candidates = find_files_of_type(
+        'img', os.path.dirname(path), qualifier=is_audio_file)[0]
+    # Sanity check to ensure we aren't loading "related files" that aren't actually related.
+    assert len(candidates) < 50000
     if len(candidates) == 0:
-        print(f"No conditioning candidates found for {path} (not even the clip itself??)")
+        print(
+            f"No conditioning candidates found for {path} (not even the clip itself??)")
         raise NotImplementedError()
     # Sample with replacement. This can get repeats, but more conveniently handles situations where there are not enough candidates.
     related_mels = []
@@ -111,10 +117,10 @@ def do_spectrogram_diffusion(diffusion_model, dvae_model, diffuser, mel_codes, c
         if gap > 0:
             mel = torch.nn.functional.pad(mel, (0, gap))
 
-        output_shape = (mel.shape[0], 1, mel.shape[-1] * spectrogram_compression_factor)
+        output_shape = (mel.shape[0], 1, mel.shape[-1]
+                        * spectrogram_compression_factor)
         if mean:
             return diffuser.p_sample_loop(diffusion_model, output_shape, noise=torch.zeros(output_shape, device=mel_codes.device),
                                           model_kwargs={'spectrogram': mel, 'conditioning_input': conditioning_input})
         else:
             return diffuser.p_sample_loop(diffusion_model, output_shape, model_kwargs={'spectrogram': mel, 'conditioning_input': conditioning_input})
-

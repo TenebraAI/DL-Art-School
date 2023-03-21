@@ -1,16 +1,22 @@
-import functools
 import math
 import random
 from functools import partial
 
 import torch
 import torch.nn as nn
-import torch_intermediary as ml
+from x_transformers.x_transformers import (DEFAULT_DIM_HEAD,
+                                           AlibiPositionalBias, Attention,
+                                           AttentionLayers, FeedForward,
+                                           FixedPositionalEmbedding, GRUGating,
+                                           LayerIntermediates,
+                                           LearnedAlibiPositionalBias,
+                                           RelativePositionBias, Residual,
+                                           RMSNorm, RotaryEmbedding, Scale,
+                                           ScaleNorm, ShiftTokens, cast_tuple,
+                                           default, equals, exists,
+                                           groupby_prefix_and_trim, not_equals)
 
-from x_transformers.x_transformers import groupby_prefix_and_trim, FixedPositionalEmbedding, default, RotaryEmbedding, \
-    DEFAULT_DIM_HEAD, RelativePositionBias, LearnedAlibiPositionalBias, AlibiPositionalBias, ScaleNorm, RMSNorm, \
-    exists, Attention, FeedForward, Scale, ShiftTokens, GRUGating, Residual, cast_tuple, equals, LayerIntermediates, \
-    AttentionLayers, not_equals
+import dlas.torch_intermediary as ml
 
 
 class TimeIntegrationBlock(nn.Module):
@@ -36,40 +42,41 @@ class TimestepEmbeddingAttentionLayers(AttentionLayers):
     """
     Modification of x-transformers.AttentionLayers that performs timestep embeddings and layerdrop.
     """
+
     def __init__(
         self,
         dim,
         timestep_dim,
         depth,
-        heads = 8,
-        causal = False,
-        cross_attend = False,
-        only_cross = False,
-        use_scalenorm = False,
-        use_rmsnorm = False,
-        use_rezero = False,
-        alibi_pos_bias = False,
-        alibi_num_heads = None,
-        alibi_learned = False,
-        rel_pos_bias = False,
-        rel_pos_num_buckets = 32,
-        rel_pos_max_distance = 128,
-        position_infused_attn = False,
-        rotary_pos_emb = False,
-        rotary_emb_dim = None,
-        custom_layers = None,
-        sandwich_coef = None,
-        par_ratio = None,
-        residual_attn = False,
-        cross_residual_attn = False,
-        macaron = False,
-        gate_residual = False,
-        scale_residual = False,
-        shift_tokens = 0,
-        use_qk_norm_attn = False,
-        qk_norm_attn_seq_len = None,
-        zero_init_branch_output = False,
-        layerdrop_percent = .1,
+        heads=8,
+        causal=False,
+        cross_attend=False,
+        only_cross=False,
+        use_scalenorm=False,
+        use_rmsnorm=False,
+        use_rezero=False,
+        alibi_pos_bias=False,
+        alibi_num_heads=None,
+        alibi_learned=False,
+        rel_pos_bias=False,
+        rel_pos_num_buckets=32,
+        rel_pos_max_distance=128,
+        position_infused_attn=False,
+        rotary_pos_emb=False,
+        rotary_emb_dim=None,
+        custom_layers=None,
+        sandwich_coef=None,
+        par_ratio=None,
+        residual_attn=False,
+        cross_residual_attn=False,
+        macaron=False,
+        gate_residual=False,
+        scale_residual=False,
+        shift_tokens=0,
+        use_qk_norm_attn=False,
+        qk_norm_attn_seq_len=None,
+        zero_init_branch_output=False,
+        layerdrop_percent=.1,
         **kwargs
     ):
         super().__init__(dim, depth)
@@ -84,21 +91,26 @@ class TimestepEmbeddingAttentionLayers(AttentionLayers):
         self.layerdrop_percent = layerdrop_percent
 
         self.has_pos_emb = position_infused_attn or rel_pos_bias or rotary_pos_emb
-        self.pia_pos_emb = FixedPositionalEmbedding(dim) if position_infused_attn else None
+        self.pia_pos_emb = FixedPositionalEmbedding(
+            dim) if position_infused_attn else None
 
         rotary_emb_dim = max(default(rotary_emb_dim, dim_head // 2), 32)
-        self.rotary_pos_emb = RotaryEmbedding(rotary_emb_dim) if rotary_pos_emb else None
+        self.rotary_pos_emb = RotaryEmbedding(
+            rotary_emb_dim) if rotary_pos_emb else None
 
-        assert not (alibi_pos_bias and rel_pos_bias), 'you can only choose Alibi positional bias or T5 relative positional bias, not both'
+        assert not (
+            alibi_pos_bias and rel_pos_bias), 'you can only choose Alibi positional bias or T5 relative positional bias, not both'
         assert rel_pos_num_buckets <= rel_pos_max_distance, 'number of relative position buckets must be less than the relative position max distance'
 
         if rel_pos_bias:
-            self.rel_pos = RelativePositionBias(scale = dim_head ** 0.5, causal = causal, heads = heads, num_buckets = rel_pos_num_buckets, max_distance = rel_pos_max_distance)
+            self.rel_pos = RelativePositionBias(
+                scale=dim_head ** 0.5, causal=causal, heads=heads, num_buckets=rel_pos_num_buckets, max_distance=rel_pos_max_distance)
         elif alibi_pos_bias:
             alibi_num_heads = default(alibi_num_heads, heads)
             assert alibi_num_heads <= heads, 'number of ALiBi heads must be less than the total number of heads'
             alibi_pos_klass = LearnedAlibiPositionalBias if alibi_learned or not causal else AlibiPositionalBias
-            self.rel_pos = alibi_pos_klass(heads = alibi_num_heads, bidirectional = not causal)
+            self.rel_pos = alibi_pos_klass(
+                heads=alibi_num_heads, bidirectional=not causal)
         else:
             self.rel_pos = None
 
@@ -125,8 +137,10 @@ class TimestepEmbeddingAttentionLayers(AttentionLayers):
 
         # qk normalization
         if use_qk_norm_attn:
-            attn_scale_init_value = -math.log(math.log2(qk_norm_attn_seq_len ** 2 - qk_norm_attn_seq_len)) if exists(qk_norm_attn_seq_len) else None
-            attn_kwargs = {**attn_kwargs, 'qk_norm': True, 'scale_init_value': attn_scale_init_value}
+            attn_scale_init_value = -math.log(math.log2(qk_norm_attn_seq_len **
+                                              2 - qk_norm_attn_seq_len)) if exists(qk_norm_attn_seq_len) else None
+            attn_kwargs = {**attn_kwargs, 'qk_norm': True,
+                           'scale_init_value': attn_scale_init_value}
 
         # zero init
         if zero_init_branch_output:
@@ -140,16 +154,20 @@ class TimestepEmbeddingAttentionLayers(AttentionLayers):
             par_depth = depth * len(default_block)
             assert 1 < par_ratio <= par_depth, 'par ratio out of range'
             default_block = tuple(filter(not_equals('f'), default_block))
-            par_attn  = par_depth // par_ratio
-            depth_cut = par_depth * 2 // 3  # 2 / 3 attention layer cutoff suggested by PAR paper
+            par_attn = par_depth // par_ratio
+            # 2 / 3 attention layer cutoff suggested by PAR paper
+            depth_cut = par_depth * 2 // 3
             par_width = (depth_cut + depth_cut // par_attn) // par_attn
-            assert len(default_block) <= par_width, 'default block is too large for par_ratio'
-            par_block = default_block + ('f',) * (par_width - len(default_block))
+            assert len(
+                default_block) <= par_width, 'default block is too large for par_ratio'
+            par_block = default_block + \
+                ('f',) * (par_width - len(default_block))
             par_head = par_block * par_attn
             layer_types = par_head + ('f',) * (par_depth - len(par_head))
         elif exists(sandwich_coef):
             assert sandwich_coef > 0 and sandwich_coef <= depth, 'sandwich coefficient should be less than the depth'
-            layer_types = ('a',) * sandwich_coef + default_block * (depth - sandwich_coef) + ('f',) * sandwich_coef
+            layer_types = ('a',) * sandwich_coef + default_block * \
+                (depth - sandwich_coef) + ('f',) * sandwich_coef
         else:
             layer_types = default_block * depth
 
@@ -163,9 +181,10 @@ class TimestepEmbeddingAttentionLayers(AttentionLayers):
         # iterate and construct layers
         for ind, (layer_type, layer_shift_tokens) in enumerate(zip(self.layer_types, shift_tokens)):
             if layer_type == 'a':
-                layer = Attention(dim, heads = heads, causal = causal, **attn_kwargs)
+                layer = Attention(dim, heads=heads,
+                                  causal=causal, **attn_kwargs)
             elif layer_type == 'c':
-                layer = Attention(dim, heads = heads, **attn_kwargs)
+                layer = Attention(dim, heads=heads, **attn_kwargs)
             elif layer_type == 'f':
                 layer = FeedForward(dim, **ff_kwargs)
                 layer = layer if not macaron else Scale(0.5, layer)
@@ -175,19 +194,22 @@ class TimestepEmbeddingAttentionLayers(AttentionLayers):
             if layer_shift_tokens > 0:
                 shift_range_upper = layer_shift_tokens + 1
                 shift_range_lower = -layer_shift_tokens if not causal else 0
-                layer = ShiftTokens(range(shift_range_lower, shift_range_upper), layer)
+                layer = ShiftTokens(
+                    range(shift_range_lower, shift_range_upper), layer)
 
             if exists(branch_fn):
                 layer = branch_fn(layer)
 
             residual_fn = GRUGating if gate_residual else Residual
-            residual = residual_fn(dim, scale_residual = scale_residual)
+            residual = residual_fn(dim, scale_residual=scale_residual)
 
             layer_uses_qk_norm = use_qk_norm_attn and layer_type in ('a', 'c')
 
-            pre_branch_norm = TimeIntegrationBlock(timestep_dim, dim, norm_fn())
+            pre_branch_norm = TimeIntegrationBlock(
+                timestep_dim, dim, norm_fn())
             post_branch_norm = norm_fn() if layer_uses_qk_norm else None
-            post_main_norm = None  # Always do prenorm for timestep integration.
+            # Always do prenorm for timestep integration.
+            post_main_norm = None
 
             norms = nn.ModuleList([
                 pre_branch_norm,
@@ -204,15 +226,16 @@ class TimestepEmbeddingAttentionLayers(AttentionLayers):
     def forward(
         self,
         x,
-        time_emb = None,
-        context = None,
-        mask = None,
-        context_mask = None,
-        attn_mask = None,
-        mems = None,
-        return_hiddens = False
+        time_emb=None,
+        context=None,
+        mask=None,
+        context_mask=None,
+        attn_mask=None,
+        mems=None,
+        return_hiddens=False
     ):
-        assert not (self.cross_attend ^ exists(context)), 'context must be passed in if cross_attend is set to True'
+        assert not (self.cross_attend ^ exists(
+            context)), 'context must be passed in if cross_attend is set to True'
         assert time_emb is not None, 'must specify a timestep embedding.'
 
         hiddens = []
@@ -224,8 +247,10 @@ class TimestepEmbeddingAttentionLayers(AttentionLayers):
 
         rotary_pos_emb = None
         if exists(self.rotary_pos_emb):
-            max_rotary_emb_length = max(list(map(lambda m: (m.shape[1] if exists(m) else 0) + x.shape[1], mems)))
-            rotary_pos_emb = self.rotary_pos_emb(max_rotary_emb_length, x.device)
+            max_rotary_emb_length = max(
+                list(map(lambda m: (m.shape[1] if exists(m) else 0) + x.shape[1], mems)))
+            rotary_pos_emb = self.rotary_pos_emb(
+                max_rotary_emb_length, x.device)
 
         unused_params = []
         to_drop = 0
@@ -253,9 +278,11 @@ class TimestepEmbeddingAttentionLayers(AttentionLayers):
             x = pre_branch_norm(x, time_emb)
 
             if layer_type == 'a':
-                out, inter = block(x, mask = mask, attn_mask = attn_mask, sinusoidal_emb = self.pia_pos_emb, rel_pos = self.rel_pos, rotary_pos_emb = rotary_pos_emb, prev_attn = prev_attn, mem = layer_mem)
+                out, inter = block(x, mask=mask, attn_mask=attn_mask, sinusoidal_emb=self.pia_pos_emb,
+                                   rel_pos=self.rel_pos, rotary_pos_emb=rotary_pos_emb, prev_attn=prev_attn, mem=layer_mem)
             elif layer_type == 'c':
-                out, inter = block(x, context, mask = mask, context_mask = context_mask, prev_attn = prev_cross_attn)
+                out, inter = block(
+                    x, context, mask=mask, context_mask=context_mask, prev_attn=prev_cross_attn)
             elif layer_type == 'f':
                 out = block(x)
 
@@ -283,8 +310,8 @@ class TimestepEmbeddingAttentionLayers(AttentionLayers):
 
         if return_hiddens:
             intermediates = LayerIntermediates(
-                hiddens = hiddens,
-                attn_intermediates = intermediates
+                hiddens=hiddens,
+                attn_intermediates=intermediates
             )
 
             return x, intermediates

@@ -1,24 +1,27 @@
 import torch
 import torchvision
 
-from models.audio.mel2vec import ContrastiveTrainingWrapper
-from trainer.injectors.audio_injectors import TorchMelSpectrogramInjector, normalize_mel
-from utils.util import load_audio
+from dlas.models.audio.mel2vec import ContrastiveTrainingWrapper
+from dlas.trainer.injectors.audio_injectors import (
+    TorchMelSpectrogramInjector, normalize_mel)
+from dlas.utils.util import load_audio
+
 
 def collapse_codegroups(codes):
     codes = codes.clone()
     groups = codes.shape[-1]
     for k in range(groups):
-        codes[:,:,k] = codes[:,:,k] * groups ** k
+        codes[:, :, k] = codes[:, :, k] * groups ** k
     codes = codes.sum(-1)
     return codes
 
 
 def recover_codegroups(codes, groups):
     codes = codes.clone()
-    output = torch.LongTensor(codes.shape[0], codes.shape[1], groups, device=codes.device)
+    output = torch.LongTensor(
+        codes.shape[0], codes.shape[1], groups, device=codes.device)
     for k in range(groups):
-        output[:,:,k] = codes % groups
+        output[:, :, k] = codes % groups
         codes = codes // groups
     return output
 
@@ -37,8 +40,10 @@ if __name__ == '__main__':
     codes = model.get_codes(mel)
     reconstruction = model.reconstruct(mel)
 
-    torchvision.utils.save_image((normalize_mel(mel).unsqueeze(1)+1)/2, 'mel.png')
-    torchvision.utils.save_image((normalize_mel(reconstruction).unsqueeze(1)+1)/2, 'reconstructed.png')
+    torchvision.utils.save_image(
+        (normalize_mel(mel).unsqueeze(1)+1)/2, 'mel.png')
+    torchvision.utils.save_image(
+        (normalize_mel(reconstruction).unsqueeze(1)+1)/2, 'reconstructed.png')
 
     collapsed = collapse_codegroups(codes)
     recovered = recover_codegroups(collapsed, 4)

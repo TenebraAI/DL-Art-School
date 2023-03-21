@@ -1,14 +1,14 @@
 # Original source: https://github.com/SeanNaren/deepspeech.pytorch/blob/master/deepspeech_pytorch/loader/sparse_image_warp.py
 # Removes the time_warp augmentation and only implements masking.
 
-import numpy as np
 import random
 
+import numpy as np
 import torch
 import torchvision.utils
 
-from trainer.inject import Injector
-from utils.util import opt_get
+from dlas.trainer.inject import Injector
+from dlas.utils.util import opt_get
 
 
 def spec_augment(mel_spectrogram, frequency_masking_para=27, time_masking_para=5, frequency_mask_num=1, time_mask_num=1):
@@ -49,6 +49,7 @@ class MelMaskInjector(Injector):
         h = state[self.input]
         return {self.output: spec_augment(h, self.freq_mask_sz, self.time_mask_sz, self.n_freq_masks, self.n_time_masks)}
 
+
 def visualization_spectrogram(spec, title):
     # Turns spec into an image and outputs it to the filesystem.
     spec = spec.unsqueeze(dim=1)
@@ -59,10 +60,11 @@ def visualization_spectrogram(spec, title):
 
 
 def test_mel_mask():
-    from data.audio.unsupervised_audio_dataset import load_audio
-    from trainer.injectors.base_injectors import MelSpectrogramInjector
+    from dlas.data.audio.unsupervised_audio_dataset import load_audio
+    from dlas.trainer.injectors.base_injectors import MelSpectrogramInjector
     spec_maker = MelSpectrogramInjector({'in': 'audio', 'out': 'spec'}, {})
-    a = load_audio('D:\\data\\audio\\libritts\\test-clean\\61\\70970\\61_70970_000007_000001.wav', 22050).unsqueeze(0)
+    a = load_audio(
+        'D:\\data\\audio\\libritts\\test-clean\\61\\70970\\61_70970_000007_000001.wav', 22050).unsqueeze(0)
     s = spec_maker({'audio': a})['spec']
     visualization_spectrogram(s, 'original spec')
     saug = spec_augment(s, 50, 5, 1, 3)
@@ -74,6 +76,8 @@ Crafty bespoke injector that is used when training ASR models to create longer s
 input length embedding is trained. Does this by concatenating every other batch element together to create longer
 sequences which (theoretically) use similar amounts of GPU memory.
 '''
+
+
 class CombineMelInjector(Injector):
     def __init__(self, opt, env):
         super().__init__(opt, env)
@@ -84,7 +88,9 @@ class CombineMelInjector(Injector):
         self.output_audio_key = opt['output_audio_key']
         self.output_text_key = opt['output_text_key']
         from models.audio.tts.tacotron2 import symbols
-        self.text_separator = len(symbols)+1  # Probably need to allow this to be set by user.
+
+        # Probably need to allow this to be set by user.
+        self.text_separator = len(symbols)+1
 
     def forward(self, state):
         audio = state[self.audio_key]
@@ -113,13 +119,13 @@ class CombineMelInjector(Injector):
 
 
 def test_mel_injector():
-    inj = CombineMelInjector({'audio_key': 'a', 'text_key': 't', 'audio_lengths_key': "alk", 'text_lengths_key': 'tlk'}, {})
+    inj = CombineMelInjector({'audio_key': 'a', 'text_key': 't',
+                             'audio_lengths_key': "alk", 'text_lengths_key': 'tlk'}, {})
     a = torch.rand((4, 22000))
-    al = torch.tensor([11000,14000,22000,20000])
+    al = torch.tensor([11000, 14000, 22000, 20000])
     t = torch.randint(0, 120, (4, 250))
-    tl = torch.tensor([100,120,200,250])
+    tl = torch.tensor([100, 120, 200, 250])
     rs = inj({'a': a, 't': t, 'alk': al, 'tlk': tl})
-
 
 
 if __name__ == '__main__':

@@ -1,13 +1,13 @@
+import functools
+import random
+
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.cuda.amp import autocast
 
-from trainer.loss import GANLoss
-import random
-import functools
-import torch.nn.functional as F
-
-from utils.util import opt_get
+from dlas.trainer.loss import GANLoss
+from dlas.utils.util import opt_get
 
 
 def create_loss(opt_loss, env):
@@ -389,7 +389,8 @@ class DiscriminatorGanLoss(ConfigurableLoss):
 
         if self.gradient_penalty:
             # Apply gradient penalty. TODO: migrate this elsewhere.
-            from models.image_generation.stylegan.stylegan2_lucidrains import gradient_penalty
+            from models.image_generation.stylegan.stylegan2_lucidrains import \
+                gradient_penalty
             assert len(real) == 1   # Grad penalty doesn't currently support multi-input discriminators.
             gp, gp_structure = gradient_penalty(real[0], d_real, return_structured_grads=True)
             self.metrics.append(("gradient_penalty", gp.clone().detach()))

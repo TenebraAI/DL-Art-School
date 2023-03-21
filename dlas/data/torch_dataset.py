@@ -1,10 +1,10 @@
-from torch.utils.data import Dataset
 import torchvision.transforms as T
+from torch.utils.data import Dataset
 from torchvision import datasets
 
 # Wrapper for basic pytorch datasets which re-wraps them into a format usable by ExtensibleTrainer.
-from data.images.cifar import CIFAR100, CIFAR10
-from utils.util import opt_get
+from dlas.data.images.cifar import CIFAR10, CIFAR100
+from dlas.utils.util import opt_get
 
 
 class TorchDataset(Dataset):
@@ -17,7 +17,8 @@ class TorchDataset(Dataset):
             "imagenet": datasets.ImageNet,
             "imagefolder": datasets.ImageFolder
         }
-        normalize = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        normalize = T.Normalize(mean=[0.485, 0.456, 0.406], std=[
+                                0.229, 0.224, 0.225])
         if opt_get(opt, ['random_crop'], False):
             transforms = [
                 T.RandomResizedCrop(opt['image_size']),
@@ -34,7 +35,8 @@ class TorchDataset(Dataset):
                 normalize,
             ]
         transforms = T.Compose(transforms)
-        self.dataset = DATASET_MAP[opt['dataset']](transform=transforms, **opt['kwargs'])
+        self.dataset = DATASET_MAP[opt['dataset']](
+            transform=transforms, **opt['kwargs'])
         self.len = opt_get(opt, ['fixed_len'], len(self.dataset))
         self.offset = opt_get(opt, ['offset'], 0)
 
@@ -52,6 +54,7 @@ class TorchDataset(Dataset):
 
     def __len__(self):
         return self.len-self.offset
+
 
 if __name__ == '__main__':
     opt = {

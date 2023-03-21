@@ -9,13 +9,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import distributed
-from transformers.models.wav2vec2.modeling_wav2vec2 import _compute_mask_indices, _sample_negative_indices
 from transformers.deepspeed import is_deepspeed_zero3_enabled
+from transformers.models.wav2vec2.modeling_wav2vec2 import (
+    _compute_mask_indices, _sample_negative_indices)
 
-from models.arch_util import ResBlock
-from trainer.networks import register_model
-from utils.util import checkpoint
-import torch_intermediary as ml
+import dlas.torch_intermediary as ml
+from dlas.models.arch_util import ResBlock
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint
 
 
 class Mel2Vec2FeatureProjection(nn.Module):
@@ -243,6 +244,8 @@ class Wav2Vec2SamePadLayer(nn.Module):
 
 
 from torch.nn.utils.weight_norm import WeightNorm
+
+
 def __deepcopy__(self, memo):
     # save and delete all weightnorm weights on self
     weights = {}

@@ -1,18 +1,19 @@
+import logging
+from collections import OrderedDict
+
+import torch
 from torch.cuda.amp import GradScaler
 from torch.distributed.optim import ZeroRedundancyOptimizer
-
-from utils.loss_accumulator import LossAccumulator
 from torch.nn import Module
-import logging
-from trainer.losses import create_loss
-import torch
-from collections import OrderedDict
-from trainer.inject import create_injector
-from utils.util import recursively_detach, opt_get, clip_grad_norm
+
+import dlas.torch_intermediary as ml
+from dlas.trainer.inject import create_injector
+from dlas.trainer.losses import create_loss
+from dlas.utils.loss_accumulator import LossAccumulator
+from dlas.utils.util import clip_grad_norm, opt_get, recursively_detach
 
 logger = logging.getLogger('base')
 
-import torch_intermediary as ml
 
 # Defines the expected API for a single training step
 class ConfigurableStep(Module):
@@ -24,9 +25,11 @@ class ConfigurableStep(Module):
         self.env = env
         self.opt = env['opt']
         self.gen_outputs = opt_step['generator_outputs']
-        self.loss_accumulator = LossAccumulator(buffer_sz=opt_get(opt_step, ['loss_log_buffer'], 50))
+        self.loss_accumulator = LossAccumulator(
+            buffer_sz=opt_get(opt_step, ['loss_log_buffer'], 50))
         self.optimizers = None
-        self.scaler = GradScaler(enabled=self.opt['fp16'] or opt_get(self.opt, ['grad_scaler_enabled'], False))
+        self.scaler = GradScaler(enabled=self.opt['fp16'] or opt_get(
+            self.opt, ['grad_scaler_enabled'], False))
         self.grads_generated = False
         self.clip_grad_eps = opt_get(opt_step, ['clip_grad_eps'], None)
 
@@ -34,7 +37,8 @@ class ConfigurableStep(Module):
         # trainer bare. With this turned on, the optimizer will not step() if a nan grad is detected. If a model trips
         # this warning 10 times in a row, the training session is aborted and the model state is saved. This has a
         # noticeable affect on training speed, but nowhere near as bad as anomaly_detection.
-        self.check_grads_for_nan = opt_get(opt_step, ['check_grads_for_nan'], False)
+        self.check_grads_for_nan = opt_get(
+            opt_step, ['check_grads_for_nan'], False)
         self.nan_counter = 0
         # This is a similar mechanism plugged into the forward() pass. It cannot be turned off.
         self.nan_loss_counter = 0
@@ -43,7 +47,8 @@ class ConfigurableStep(Module):
         if 'injectors' in self.step_opt.keys():
             injector_names = []
             for inj_name, injector in self.step_opt['injectors'].items():
-                assert inj_name not in injector_names  # Repeated names are always an error case.
+                # Repeated names are always an error case.
+                assert inj_name not in injector_names
                 injector_names.append(inj_name)
                 self.injectors.append(create_injector(injector, env))
 
@@ -51,14 +56,15 @@ class ConfigurableStep(Module):
         self.weights = {}
         if 'losses' in self.step_opt.keys():
             for loss_name, loss in self.step_opt['losses'].items():
-                assert loss_name not in self.weights.keys()  # Repeated names are always an error case.
+                # Repeated names are always an error case.
+                assert loss_name not in self.weights.keys()
                 losses.append((loss_name, create_loss(loss, env)))
                 self.weights[loss_name] = loss['weight']
         self.losses = OrderedDict(losses)
 
     def get_network_for_name(self, name):
         return self.env['generators'][name] if name in self.env['generators'].keys() \
-                else self.env['discriminators'][name]
+            else self.env['discriminators'][name]
 
     # Subclasses should override this to define individual optimizers. They should all go into self.optimizers.
     #  This default implementation defines a single optimizer for all Generator parameters.
@@ -114,39 +120,47 @@ class ConfigurableStep(Module):
                         optim_params[param_group]['params'].append(v)
                     else:
                         if self.env['rank'] <= 0:
-                            logger.warning('Params [{:s}] will not optimize.'.format(k))
+                            logger.warning(
+                                'Params [{:s}] will not optimize.'.format(k))
             params_names_notweights = sorted(list(param_names_notweights))
             params_notweights = [param_map[k] for k in params_names_notweights]
-            params_names_weights = sorted(list(all_param_names ^ param_names_notweights))
+            params_names_weights = sorted(
+                list(all_param_names ^ param_names_notweights))
             params_weights = [param_map[k] for k in params_names_weights]
 
             if 'optimizer' not in self.step_opt.keys() or self.step_opt['optimizer'] == 'adamw':
                 groups = [
-                    { 'params': params_weights, 'weight_decay': opt_get(opt_config, ['weight_decay'], 0) },
-                    { 'params': params_notweights, 'weight_decay': 0 }
+                    {'params': params_weights, 'weight_decay': opt_get(
+                        opt_config, ['weight_decay'], 0)},
+                    {'params': params_notweights, 'weight_decay': 0}
                 ]
                 # torch.optim.AdamW
                 opt = ml.AdamW(groups, lr=opt_config['lr'],
-                                       weight_decay=opt_get(opt_config, ['weight_decay'], 1e-2),
-                                       betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
-                opt._group_names = [params_names_weights, params_names_notweights]
+                               weight_decay=opt_get(
+                                   opt_config, ['weight_decay'], 1e-2),
+                               betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
+                opt._group_names = [
+                    params_names_weights, params_names_notweights]
             elif self.step_opt['optimizer'] == 'mu_adamw':
                 groups = [
-                    { 'params': params_weights, 'weight_decay': opt_get(opt_config, ['weight_decay'], 0) },
-                    { 'params': params_notweights, 'weight_decay': 0 }
+                    {'params': params_weights, 'weight_decay': opt_get(
+                        opt_config, ['weight_decay'], 0)},
+                    {'params': params_notweights, 'weight_decay': 0}
                 ]
                 from mup.optim import MuAdamW
                 opt = MuAdamW(groups, lr=opt_config['lr'],
-                             weight_decay=opt_get(opt_config, ['weight_decay'], 1e-2),
-                             betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
-                opt._group_names = [params_names_weights, params_names_notweights]
+                              weight_decay=opt_get(
+                                  opt_config, ['weight_decay'], 1e-2),
+                              betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
+                opt._group_names = [
+                    params_names_weights, params_names_notweights]
             elif self.step_opt['optimizer'] == 'adamw_zero':
                 # The torch ZeRO implementation does not seem to support parameter groups, so do not shard the non-weighted
                 # parameters and just use a normal AdamW implementation. In a large network, these weights will normally
                 # be a tiny fraction of the total weights.
                 # torch.optim.AdamW
                 opt_unweighted = ml.AdamW(params_notweights, lr=opt_config['lr'], weight_decay=0,
-                                       betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
+                                          betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
                 opt_unweighted._config = opt_config
                 opt_unweighted._config['network'] = net_name
                 opt_unweighted._group_names = []
@@ -154,8 +168,9 @@ class ConfigurableStep(Module):
 
                 # torch.optim.AdamW
                 opt = ZeroRedundancyOptimizer(params_weights, optimizer_class=ml.AdamW, lr=opt_config['lr'],
-                                       weight_decay=opt_get(opt_config, ['weight_decay'], 1e-2),
-                                       betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
+                                              weight_decay=opt_get(
+                                                  opt_config, ['weight_decay'], 1e-2),
+                                              betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
                 opt.param_groups[0]['initial_lr'] = opt_config['lr']
                 opt._group_names = []
             elif self.step_opt['optimizer'] == 'lars':
@@ -163,27 +178,32 @@ class ConfigurableStep(Module):
                 from trainer.optimizers.sgd import SGDNoBiasMomentum
                 optSGD = SGDNoBiasMomentum(list(optim_params.values()), lr=opt_config['lr'], momentum=opt_config['momentum'],
                                            weight_decay=opt_config['weight_decay'])
-                opt = LARC(optSGD, trust_coefficient=opt_config['lars_coefficient'])
+                opt = LARC(
+                    optSGD, trust_coefficient=opt_config['lars_coefficient'])
                 opt._group_names = sorted(list(all_param_names))
             elif self.step_opt['optimizer'] == 'lamb':
                 from trainer.optimizers.lamb import Lamb
+
                 # torch.optim.AdamW
                 opt_unweighted = ml.AdamW(params_notweights, lr=opt_config['lr'], weight_decay=0,
-                                       betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
+                                          betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
                 opt_unweighted._config = opt_config
                 opt_unweighted._config['network'] = net_name
                 opt_unweighted._group_names = []
                 self.optimizers.append(opt_unweighted)
 
                 opt = Lamb(params_weights, lr=opt_config['lr'],
-                                   weight_decay=opt_get(opt_config, ['weight_decay'], 1e-2),
-                                   betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
+                           weight_decay=opt_get(
+                               opt_config, ['weight_decay'], 1e-2),
+                           betas=(opt_get(opt_config, ['beta1'], .9), opt_get(opt_config, ['beta2'], .999)))
                 opt._group_names = []
             elif self.step_opt['optimizer'] == 'sgd':
                 from torch.optim import SGD
-                opt = SGD(list(optim_params.values()), lr=opt_config['lr'], momentum=opt_config['momentum'], weight_decay=opt_config['weight_decay'])
+                opt = SGD(list(optim_params.values(
+                )), lr=opt_config['lr'], momentum=opt_config['momentum'], weight_decay=opt_config['weight_decay'])
                 opt._group_names = sorted(list(all_param_names))
-            opt._config = opt_config  # This is a bit seedy, but we will need these configs later.
+            # This is a bit seedy, but we will need these configs later.
+            opt._config = opt_config
             opt._config['network'] = net_name
             self.optimizers.append(opt)
 
@@ -214,8 +234,10 @@ class ConfigurableStep(Module):
     # chunked tensors. Use grad_accum_step to dereference these steps. Should return a dict of tensors that later
     # steps might use. These tensors are automatically detached and accumulated into chunks.
     def do_forward_backward(self, state, grad_accum_step, amp_loss_id, train=True, no_ddp_sync=False, loss_accumulator=None):
-        local_state = {}  # <-- Will store the entire local state to be passed to injectors & losses.
-        new_state = {}  # <-- Will store state values created by this step for returning to ExtensibleTrainer.
+        # <-- Will store the entire local state to be passed to injectors & losses.
+        local_state = {}
+        # <-- Will store state values created by this step for returning to ExtensibleTrainer.
+        new_state = {}
         for k, v in state.items():
             local_state[k] = v[grad_accum_step]
         local_state['train_nets'] = str(self.get_networks_trained())
@@ -268,13 +290,16 @@ class ConfigurableStep(Module):
                 if 'after' in loss.opt.keys() and loss.opt['after'] > self.env['step'] or \
                    'before' in loss.opt.keys() and self.env['step'] > loss.opt['before'] or \
                    'every' in loss.opt.keys() and self.env['step'] % loss.opt['every'] != 0:
-                    multiplier = 0  # Multiply by 0 so gradients still flow and DDP works. Effectively this means the loss is unused.
+                    # Multiply by 0 so gradients still flow and DDP works. Effectively this means the loss is unused.
+                    multiplier = 0
                 if loss.is_stateful():
-                    l, lstate = loss(self.get_network_for_name(self.step_opt['training']), local_state)
+                    l, lstate = loss(self.get_network_for_name(
+                        self.step_opt['training']), local_state)
                     local_state.update(lstate)
                     new_state.update(lstate)
                 else:
-                    l = loss(self.get_network_for_name(self.step_opt['training']), local_state)
+                    l = loss(self.get_network_for_name(
+                        self.step_opt['training']), local_state)
                 if not l.isfinite():
                     print(f'!!Detected non-finite loss {loss_name}')
                 total_loss += l * self.weights[loss_name] * multiplier
@@ -287,7 +312,8 @@ class ConfigurableStep(Module):
 
             # In some cases, the loss could not be set (e.g. all losses have 'after')
             if train and isinstance(total_loss, torch.Tensor) and total_loss.isfinite():
-                loss_accumulator.add_loss("%s_total" % (self.get_training_network_name(),), total_loss)
+                loss_accumulator.add_loss("%s_total" % (
+                    self.get_training_network_name(),), total_loss)
 
                 # Scale the loss down by the accumulation factor.
                 total_loss = total_loss / self.env['mega_batch_factor']
@@ -301,9 +327,11 @@ class ConfigurableStep(Module):
                 print("Non-finite loss encountered. Skipping backwards step.")
                 self.nan_loss_counter += 1
                 if self.nan_loss_counter > 10:
-                    print("Encountered 10 NaN losses in a row. Something is screwed up. Dumping model weights and exiting.")
+                    print(
+                        "Encountered 10 NaN losses in a row. Something is screwed up. Dumping model weights and exiting.")
                     if self.env['rank'] == 0:
-                        torch.save(training_net.state_dict(), "nan_error_weights.pth")
+                        torch.save(training_net.state_dict(),
+                                   "nan_error_weights.pth")
                     exit(1)
 
         # Detach all state variables. Within the step, gradients can flow. Once these variables leave the step
@@ -327,14 +355,17 @@ class ConfigurableStep(Module):
         self.grads_generated = False
         for opt in self.optimizers:
             # self.scaler.unscale_(opt) It would be important to do this here, but ExtensibleTrainer currently does it.
-            
+
             # Optimizers can be opted out in the early stages of training.
-            after = opt._config['after'] if 'after' in opt._config.keys() else 0
-            after_network = self.opt['networks'][opt._config['network']]['after'] if 'after' in self.opt['networks'][opt._config['network']].keys() else 0
+            after = opt._config['after'] if 'after' in opt._config.keys(
+            ) else 0
+            after_network = self.opt['networks'][opt._config['network']
+                                                 ]['after'] if 'after' in self.opt['networks'][opt._config['network']].keys() else 0
             after = max(after, after_network)
             if self.env['step'] < after:
                 continue
-            before = opt._config['before'] if 'before' in opt._config.keys() else -1
+            before = opt._config['before'] if 'before' in opt._config.keys(
+            ) else -1
             if before != -1 and self.env['step'] > before:
                 continue
 
@@ -355,9 +386,11 @@ class ConfigurableStep(Module):
 
             if self.clip_grad_eps is not None and self.clip_grad_eps != 0:
                 for pgn, pg in zip(opt._group_names, opt.param_groups):
-                    grad_norm = clip_grad_norm(pg['params'], pgn, self.clip_grad_eps)
+                    grad_norm = clip_grad_norm(
+                        pg['params'], pgn, self.clip_grad_eps)
                     if torch.isnan(grad_norm):
-                        print("NaN found in clip_grad; zeroing grad and trying again.")
+                        print(
+                            "NaN found in clip_grad; zeroing grad and trying again.")
                         nan_found = True
                         self.nan_counter += 1
 

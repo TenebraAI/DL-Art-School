@@ -1,18 +1,18 @@
 import copy
 import os
 from functools import wraps
-import kornia.augmentation as augs
 
+import kornia.augmentation as augs
 import torch
 import torch.nn.functional as F
 import torchvision
 from kornia import filters
 from torch import nn
 
-from data.images.byol_attachment import RandomApply
-from trainer.networks import register_model, create_model
-from utils.util import checkpoint, opt_get
-import torch_intermediary as ml
+import dlas.torch_intermediary as ml
+from dlas.data.images.byol_attachment import RandomApply
+from dlas.trainer.networks import create_model, register_model
+from dlas.utils.util import checkpoint, opt_get
 
 
 def default(val, def_val):
@@ -152,10 +152,12 @@ class NetWrapper(nn.Module):
     @singleton('projector')
     def _get_projector(self, hidden):
         if self.structural_mlp:
-            projector = StructuralMLP(hidden.shape, self.projection_size, self.projection_hidden_size)
+            projector = StructuralMLP(
+                hidden.shape, self.projection_size, self.projection_hidden_size)
         else:
-            _, dim = hidden.flatten(1,-1).shape
-            projector = MLP(dim, self.projection_size, self.projection_hidden_size)
+            _, dim = hidden.flatten(1, -1).shape
+            projector = MLP(dim, self.projection_size,
+                            self.projection_hidden_size)
         return projector.to(hidden)
 
     def get_representation(self, x):
@@ -189,7 +191,8 @@ class BYOL(nn.Module):
             moving_average_decay=0.99,
             use_momentum=True,
             structural_mlp=False,
-            positional_dimension=2,  # 2 for images, 1 for audio, everything else isn't supported.
+            # 2 for images, 1 for audio, everything else isn't supported.
+            positional_dimension=2,
             perform_augmentation=True,
     ):
         super().__init__()
@@ -199,7 +202,7 @@ class BYOL(nn.Module):
 
         self.perform_augmentation = perform_augmentation
         if self.perform_augmentation:
-            augmentations = [ \
+            augmentations = [
                 RandomApply(augs.ColorJitter(0.8, 0.8, 0.8, 0.2), p=0.8),
                 augs.RandomGrayscale(p=0.2),
                 augs.RandomHorizontalFlip(),
@@ -210,7 +213,8 @@ class BYOL(nn.Module):
         self.target_encoder = None
         self.target_ema_updater = EMA(moving_average_decay)
 
-        self.online_predictor = MLP(projection_size, projection_size, projection_hidden_size)
+        self.online_predictor = MLP(
+            projection_size, projection_size, projection_hidden_size)
 
         # get device of network and make wrapper same device
         device = get_module_device(net)
@@ -240,7 +244,8 @@ class BYOL(nn.Module):
     def update_for_step(self, step, __):
         assert self.use_momentum, 'you do not need to update the moving average, since you have turned off momentum for the target encoder'
         assert self.target_encoder is not None, 'target encoder has not been created yet'
-        update_moving_average(self.target_ema_updater, self.target_encoder, self.online_encoder)
+        update_moving_average(self.target_ema_updater,
+                              self.target_encoder, self.online_encoder)
 
     def get_debug_values(self, step, __):
         # In the BYOL paper, this is made to increase over time. Not yet implemented, but still logging the value.
@@ -248,8 +253,10 @@ class BYOL(nn.Module):
 
     def visual_dbg(self, step, path):
         if self.perform_augmentation and self.positional_dimension == 2:
-            torchvision.utils.save_image(self.im1.cpu().float(), os.path.join(path, "%i_image1.png" % (step,)))
-            torchvision.utils.save_image(self.im2.cpu().float(), os.path.join(path, "%i_image2.png" % (step,)))
+            torchvision.utils.save_image(self.im1.cpu().float(
+            ), os.path.join(path, "%i_image1.png" % (step,)))
+            torchvision.utils.save_image(self.im2.cpu().float(
+            ), os.path.join(path, "%i_image2.png" % (step,)))
 
     def forward(self, image_one, image_two):
         if self.perform_augmentation:
@@ -266,7 +273,8 @@ class BYOL(nn.Module):
         online_pred_two = self.online_predictor(online_proj_two)
 
         with torch.no_grad():
-            target_encoder = self._get_target_encoder() if self.use_momentum else self.online_encoder
+            target_encoder = self._get_target_encoder(
+            ) if self.use_momentum else self.online_encoder
             target_proj_one = target_encoder(image_one).detach()
             target_proj_two = target_encoder(image_two).detach()
 

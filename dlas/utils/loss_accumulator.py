@@ -1,5 +1,4 @@
 import torch
-
 # Utility class that stores detached, named losses in a rotating buffer for smooth metric outputting.
 from torch import distributed
 
@@ -14,7 +13,8 @@ class LossAccumulator:
         if name not in self.buffers.keys():
             if "_histogram" in name:
                 tensor = torch.flatten(tensor.detach().cpu())
-                self.buffers[name] = (0, torch.zeros((self.buffer_sz, tensor.shape[0])), False)
+                self.buffers[name] = (0, torch.zeros(
+                    (self.buffer_sz, tensor.shape[0])), False)
             else:
                 self.buffers[name] = (0, torch.zeros(self.buffer_sz), False)
         i, buf, filled = self.buffers[name]

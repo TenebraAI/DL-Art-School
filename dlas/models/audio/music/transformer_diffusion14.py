@@ -4,18 +4,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.arch_util import TimestepEmbedSequential
-from models.audio.music.encoders import ResEncoder16x
-from models.audio.music.transformer_diffusion13 import ConcatAttentionBlock
-from models.diffusion.nn import timestep_embedding, normalization, zero_module, conv_nd, linear
-from trainer.networks import register_model
-from utils.util import checkpoint, print_network
+from dlas.models.arch_util import TimestepEmbedSequential
+from dlas.models.audio.music.encoders import ResEncoder16x
+from dlas.models.audio.music.transformer_diffusion13 import \
+    ConcatAttentionBlock
+from dlas.models.diffusion.nn import (conv_nd, linear, normalization,
+                                      timestep_embedding, zero_module)
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint, print_network
 
 
 class TransformerDiffusion(nn.Module):
     """
     A diffusion model composed entirely of stacks of transformer layers. Why would you do it any other way?
     """
+
     def __init__(
             self,
             time_embed_dim=256,
@@ -27,11 +30,13 @@ class TransformerDiffusion(nn.Module):
             out_channels=512,  # mean and variance
             num_heads=4,
             dropout=0,
-            use_corner_alignment=False,  # This is an interpolation parameter only provided for backwards compatibility. ALL NEW TRAINS SHOULD SET THIS TO TRUE.
+            # This is an interpolation parameter only provided for backwards compatibility. ALL NEW TRAINS SHOULD SET THIS TO TRUE.
+            use_corner_alignment=False,
             use_fp16=False,
             new_code_expansion=False,
             # Parameters for regularization.
-            unconditioned_percentage=.1,  # This implements a mechanism similar to what is used in classifier-free training.
+            # This implements a mechanism similar to what is used in classifier-free training.
+            unconditioned_percentage=.1,
             # Parameters for re-training head
             freeze_except_code_converters=False,
     ):
@@ -55,7 +60,8 @@ class TransformerDiffusion(nn.Module):
         )
 
         self.input_converter = nn.Conv1d(input_vec_dim, model_channels, 1)
-        self.unconditioned_embedding = nn.Parameter(torch.randn(1,model_channels,1))
+        self.unconditioned_embedding = nn.Parameter(
+            torch.randn(1, model_channels, 1))
         self.intg = nn.Conv1d(model_channels*2, model_channels, 1)
         self.layers = TimestepEmbedSequential(*[ConcatAttentionBlock(model_channels, contraction_dim, time_embed_dim//4,
                                                                      num_heads, dropout) for _ in range(num_layers)])
@@ -63,7 +69,8 @@ class TransformerDiffusion(nn.Module):
         self.out = nn.Sequential(
             normalization(model_channels),
             nn.SiLU(),
-            zero_module(conv_nd(1, model_channels, out_channels, 3, padding=1)),
+            zero_module(conv_nd(1, model_channels,
+                        out_channels, 3, padding=1)),
         )
 
         if freeze_except_code_converters:
@@ -76,13 +83,16 @@ class TransformerDiffusion(nn.Module):
                     p.requires_grad = True
 
     def get_grad_norm_parameter_groups(self):
-        attn1 = list(itertools.chain.from_iterable([lyr.block1.attn.parameters() for lyr in self.layers]))
-        attn2 = list(itertools.chain.from_iterable([lyr.block2.attn.parameters() for lyr in self.layers]))
+        attn1 = list(itertools.chain.from_iterable(
+            [lyr.block1.attn.parameters() for lyr in self.layers]))
+        attn2 = list(itertools.chain.from_iterable(
+            [lyr.block2.attn.parameters() for lyr in self.layers]))
         ff1 = list(itertools.chain.from_iterable([lyr.block1.ff1.parameters() for lyr in self.layers] +
                                                  [lyr.block1.ff2.parameters() for lyr in self.layers]))
         ff2 = list(itertools.chain.from_iterable([lyr.block2.ff1.parameters() for lyr in self.layers] +
                                                  [lyr.block2.ff2.parameters() for lyr in self.layers]))
-        blkout_layers = list(itertools.chain.from_iterable([lyr.out.parameters() for lyr in self.layers]))
+        blkout_layers = list(itertools.chain.from_iterable(
+            [lyr.out.parameters() for lyr in self.layers]))
         groups = {
             'prenorms': list(itertools.chain.from_iterable([lyr.prenorm.parameters() for lyr in self.layers])),
             'blk1_attention_layers': attn1,
@@ -101,7 +111,8 @@ class TransformerDiffusion(nn.Module):
 
     def forward(self, x, timesteps, prior=None, conditioning_free=False):
         if conditioning_free:
-            code_emb = self.unconditioned_embedding.repeat(x.shape[0], 1, x.shape[-1])
+            code_emb = self.unconditioned_embedding.repeat(
+                x.shape[0], 1, x.shape[-1])
         else:
             code_emb = self.input_converter(prior)
 
@@ -112,10 +123,12 @@ class TransformerDiffusion(nn.Module):
                 code_emb = torch.where(unconditioned_batches, self.unconditioned_embedding.repeat(x.shape[0], 1, 1),
                                        code_emb)
 
-            code_emb = F.interpolate(code_emb, size=x.shape[-1], mode='nearest')
+            code_emb = F.interpolate(
+                code_emb, size=x.shape[-1], mode='nearest')
 
         with torch.autocast(x.device.type, enabled=self.enable_fp16):
-            blk_emb = self.time_embed(timestep_embedding(timesteps, self.time_embed_dim))
+            blk_emb = self.time_embed(
+                timestep_embedding(timesteps, self.time_embed_dim))
             x = self.inp_block(x)
 
             x = self.intg(torch.cat([x, code_emb], dim=1))
@@ -141,7 +154,8 @@ class TransformerDiffusionWithCheaterLatent(nn.Module):
         self.internal_step = 0
         self.freeze_encoder_until = freeze_encoder_until
         self.diff = TransformerDiffusion(**kwargs)
-        self.encoder = ResEncoder16x(256, 1024, 256, checkpointing_enabled=checkpoint_encoder)
+        self.encoder = ResEncoder16x(
+            256, 1024, 256, checkpointing_enabled=checkpoint_encoder)
 
     def forward(self, x, timesteps, truth_mel, conditioning_free=False, cheater=None):
         unused_parameters = []
@@ -158,7 +172,8 @@ class TransformerDiffusionWithCheaterLatent(nn.Module):
         for p in unused_parameters:
             proj = proj + p.mean() * 0
 
-        diff = self.diff(x, timesteps, prior=proj, conditioning_free=conditioning_free)
+        diff = self.diff(x, timesteps, prior=proj,
+                         conditioning_free=conditioning_free)
         return diff
 
     def get_debug_values(self, step, __):
@@ -172,7 +187,8 @@ class TransformerDiffusionWithCheaterLatent(nn.Module):
 
     def before_step(self, step):
         scaled_grad_parameters = list(itertools.chain.from_iterable([lyr.out.parameters() for lyr in self.diff.layers])) + \
-                                 list(itertools.chain.from_iterable([lyr.prenorm.parameters() for lyr in self.diff.layers]))
+            list(itertools.chain.from_iterable(
+                [lyr.prenorm.parameters() for lyr in self.diff.layers]))
         # Scale back the gradients of the blkout and prenorm layers by a constant factor. These get two orders of magnitudes
         # higher gradients. Ideally we would use parameter groups, but ZeroRedundancyOptimizer makes this trickier than
         # directly fiddling with the gradients.
@@ -196,10 +212,10 @@ def register_transformer_diffusion_14_with_cheater_latent(opt_net, opt):
 
 
 def test_tfd():
-    clip = torch.randn(2,256,400)
+    clip = torch.randn(2, 256, 400)
     ts = torch.LongTensor([600, 600])
     model = TransformerDiffusion(in_channels=256, model_channels=1024, contraction_dim=512,
-                                              num_heads=3, input_vec_dim=256, num_layers=12, dropout=.1)
+                                 num_heads=3, input_vec_dim=256, num_layers=12, dropout=.1)
     model(clip, ts, clip)
 
 
@@ -209,14 +225,14 @@ def test_cheater_model():
 
     # For music:
     model = TransformerDiffusionWithCheaterLatent(in_channels=256, out_channels=512,
-                                                    model_channels=1024, contraction_dim=512, num_heads=8,
-                                                    input_vec_dim=256, num_layers=16,
-                                                    dropout=.1, new_code_expansion=True,
-                                              )
-    #diff_weights = torch.load('extracted_diff.pth')
-    #model.diff.load_state_dict(diff_weights, strict=False)
-    #model.encoder.load_state_dict(torch.load('../experiments/music_cheater_encoder_256.pth', map_location=torch.device('cpu')), strict=True)
-    #torch.save(model.state_dict(), 'sample.pth')
+                                                  model_channels=1024, contraction_dim=512, num_heads=8,
+                                                  input_vec_dim=256, num_layers=16,
+                                                  dropout=.1, new_code_expansion=True,
+                                                  )
+    # diff_weights = torch.load('extracted_diff.pth')
+    # model.diff.load_state_dict(diff_weights, strict=False)
+    # model.encoder.load_state_dict(torch.load('../experiments/music_cheater_encoder_256.pth', map_location=torch.device('cpu')), strict=True)
+    # torch.save(model.state_dict(), 'sample.pth')
 
     print_network(model)
     o = model(clip, ts, clip)
@@ -234,7 +250,8 @@ def extract_cheater_encoder(in_f, out_f):
 
 
 if __name__ == '__main__':
-    #test_local_attention_mask()
-    extract_cheater_encoder('X:\\dlas\\experiments\\tfd14_and_cheater.pth', 'X:\\dlas\\experiments\\tfd14_cheater_encoder.pth')
-    #test_cheater_model()
-    #extract_diff('X:\\dlas\experiments\\train_music_diffusion_tfd_cheater_from_scratch\\models\\56500_generator_ema.pth', 'extracted.pth', remove_head=True)
+    # test_local_attention_mask()
+    extract_cheater_encoder('X:\\dlas\\experiments\\tfd14_and_cheater.pth',
+                            'X:\\dlas\\experiments\\tfd14_cheater_encoder.pth')
+    # test_cheater_model()
+    # extract_diff('X:\\dlas\experiments\\train_music_diffusion_tfd_cheater_from_scratch\\models\\56500_generator_ema.pth', 'extracted.pth', remove_head=True)

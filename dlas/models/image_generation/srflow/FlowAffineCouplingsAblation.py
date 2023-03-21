@@ -1,9 +1,9 @@
 import torch
 from torch import nn as nn
 
-from models.image_generation.srflow import thops
-from models.image_generation.srflow.flow import Conv2d, Conv2dZeros
-from utils.util import opt_get
+from dlas.models.image_generation.srflow import thops
+from dlas.models.image_generation.srflow.flow import Conv2d, Conv2dZeros
+from dlas.utils.util import opt_get
 
 
 class CondAffineSeparatedAndCond(nn.Module):
@@ -15,10 +15,12 @@ class CondAffineSeparatedAndCond(nn.Module):
         self.kernel_hidden = 1
         self.affine_eps = 0.0001
         self.n_hidden_layers = 1
-        hidden_channels = opt_get(opt, ['networks', 'generator','flow', 'CondAffineSeparatedAndCond', 'hidden_channels'])
+        hidden_channels = opt_get(
+            opt, ['networks', 'generator', 'flow', 'CondAffineSeparatedAndCond', 'hidden_channels'])
         self.hidden_channels = 64 if hidden_channels is None else hidden_channels
 
-        self.affine_eps = opt_get(opt, ['networks', 'generator','flow', 'CondAffineSeparatedAndCond', 'eps'],  0.0001)
+        self.affine_eps = opt_get(
+            opt, ['networks', 'generator', 'flow', 'CondAffineSeparatedAndCond', 'eps'],  0.0001)
 
         self.channels_for_nn = self.in_channels // 2
         self.channels_for_co = self.in_channels - self.channels_for_nn
@@ -41,7 +43,8 @@ class CondAffineSeparatedAndCond(nn.Module):
     def forward(self, input: torch.Tensor, logdet=None, reverse=False, ft=None):
         if not reverse:
             z = input
-            assert z.shape[1] == self.in_channels, (z.shape[1], self.in_channels)
+            assert z.shape[1] == self.in_channels, (
+                z.shape[1], self.in_channels)
 
             # Feature Conditional
             scaleFt, shiftFt = self.feature_extract(ft, self.fFeatures)
@@ -81,10 +84,14 @@ class CondAffineSeparatedAndCond(nn.Module):
         return output, logdet
 
     def asserts(self, scale, shift, z1, z2):
-        assert z1.shape[1] == self.channels_for_nn, (z1.shape[1], self.channels_for_nn)
-        assert z2.shape[1] == self.channels_for_co, (z2.shape[1], self.channels_for_co)
-        assert scale.shape[1] == shift.shape[1], (scale.shape[1], shift.shape[1])
-        assert scale.shape[1] == z2.shape[1], (scale.shape[1], z1.shape[1], z2.shape[1])
+        assert z1.shape[1] == self.channels_for_nn, (
+            z1.shape[1], self.channels_for_nn)
+        assert z2.shape[1] == self.channels_for_co, (
+            z2.shape[1], self.channels_for_co)
+        assert scale.shape[1] == shift.shape[1], (
+            scale.shape[1], shift.shape[1])
+        assert scale.shape[1] == z2.shape[1], (
+            scale.shape[1], z1.shape[1], z2.shape[1])
 
     def get_logdet(self, scale):
         return thops.sum(torch.log(scale), dim=[1, 2, 3])
@@ -105,14 +112,16 @@ class CondAffineSeparatedAndCond(nn.Module):
     def split(self, z):
         z1 = z[:, :self.channels_for_nn]
         z2 = z[:, self.channels_for_nn:]
-        assert z1.shape[1] + z2.shape[1] == z.shape[1], (z1.shape[1], z2.shape[1], z.shape[1])
+        assert z1.shape[1] + \
+            z2.shape[1] == z.shape[1], (z1.shape[1], z2.shape[1], z.shape[1])
         return z1, z2
 
     def F(self, in_channels, out_channels, hidden_channels, kernel_hidden=1, n_hidden_layers=1):
         layers = [Conv2d(in_channels, hidden_channels), nn.ReLU(inplace=False)]
 
         for _ in range(n_hidden_layers):
-            layers.append(Conv2d(hidden_channels, hidden_channels, kernel_size=[kernel_hidden, kernel_hidden]))
+            layers.append(Conv2d(hidden_channels, hidden_channels,
+                          kernel_size=[kernel_hidden, kernel_hidden]))
             layers.append(nn.ReLU(inplace=False))
         layers.append(Conv2dZeros(hidden_channels, out_channels))
 

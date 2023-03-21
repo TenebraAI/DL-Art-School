@@ -3,15 +3,16 @@ import random
 import sys
 
 import torch
-import torch.utils.data
 import torch.nn.functional as F
+import torch.utils.data
 import torchaudio
 from audio2numpy import open_audio
 from tqdm import tqdm
 
-from data.util import find_files_of_type, is_audio_file, load_paths_from_cache
-from models.audio.tts.tacotron2.taco_utils import load_wav_to_torch
-from utils.util import opt_get
+from dlas.data.util import (find_files_of_type, is_audio_file,
+                            load_paths_from_cache)
+from dlas.models.audio.tts.tacotron2.taco_utils import load_wav_to_torch
+from dlas.utils.util import opt_get
 
 
 def load_audio(audiopath, sampling_rate):
@@ -53,17 +54,21 @@ def load_similar_clips(path, sample_length, sample_rate, n=3, fallback_to_self=T
         similarities = torch.load(sim_path)
         fname = os.path.basename(path)
         if fname in similarities.keys():
-            candidates = [os.path.join(os.path.dirname(path), s) for s in similarities[fname]]
+            candidates = [os.path.join(os.path.dirname(path), s)
+                          for s in similarities[fname]]
         else:
-            print(f'Similarities list found for {path} but {fname} was not in that list.')
-        #candidates.append(path)  # Always include self as a possible similar clip.
+            print(
+                f'Similarities list found for {path} but {fname} was not in that list.')
+        # candidates.append(path)  # Always include self as a possible similar clip.
     if len(candidates) == 0:
         if fallback_to_self:
             candidates = [path]
         else:
-            candidates = find_files_of_type('img', os.path.dirname(path), qualifier=is_audio_file)[0]
+            candidates = find_files_of_type(
+                'img', os.path.dirname(path), qualifier=is_audio_file)[0]
 
-    assert len(candidates) < 50000  # Sanity check to ensure we aren't loading "related files" that aren't actually related.
+    # Sanity check to ensure we aren't loading "related files" that aren't actually related.
+    assert len(candidates) < 50000
     if len(candidates) == 0:
         print(f"No conditioning candidates found for {path}")
         raise NotImplementedError()
@@ -92,7 +97,8 @@ class UnsupervisedAudioDataset(torch.utils.data.Dataset):
 
     def __init__(self, opt):
         path = opt['path']
-        cache_path = opt['cache_path']  # Will fail when multiple paths specified, must be specified in this case.
+        # Will fail when multiple paths specified, must be specified in this case.
+        cache_path = opt['cache_path']
         exclusions = []
         if 'exclusions' in opt.keys():
             for exc in opt['exclusions']:
@@ -102,7 +108,8 @@ class UnsupervisedAudioDataset(torch.utils.data.Dataset):
         assert isinstance(ew, list)
         not_ew = opt_get(opt, ['not_endswith'], [])
         assert isinstance(not_ew, list)
-        self.audiopaths = load_paths_from_cache(path, cache_path, exclusions, endswith=ew, not_endswith=not_ew)
+        self.audiopaths = load_paths_from_cache(
+            path, cache_path, exclusions, endswith=ew, not_endswith=not_ew)
 
         # Parse options
         self.sampling_rate = opt_get(opt, ['sampling_rate'], 22050)
@@ -121,7 +128,8 @@ class UnsupervisedAudioDataset(torch.utils.data.Dataset):
         self.extra_samples = opt_get(opt, ['extra_samples'], 0)
         self.extra_sample_len = opt_get(opt, ['extra_sample_length'], 44000)
 
-        self.debug_loading_failures = opt_get(opt, ['debug_loading_failures'], True)
+        self.debug_loading_failures = opt_get(
+            opt, ['debug_loading_failures'], True)
 
     def get_audio_for_index(self, index):
         audiopath = self.audiopaths[index]
@@ -144,8 +152,9 @@ class UnsupervisedAudioDataset(torch.utils.data.Dataset):
             alt_files, alt_is_self = self.get_related_audio_for_index(index)
         except:
             if self.debug_loading_failures:
-                print(f"Error loading audio for file {self.audiopaths[index]} {sys.exc_info()}")
-            return self[random.randint(0,len(self))]
+                print(
+                    f"Error loading audio for file {self.audiopaths[index]} {sys.exc_info()}")
+            return self[random.randint(0, len(self))]
 
         # When generating resampled clips, skew is a bias that tries to spread them out from each other, reducing their
         # influence on one another.
@@ -157,10 +166,12 @@ class UnsupervisedAudioDataset(torch.utils.data.Dataset):
         for sk in skew:
             if self.pad_to is not None:
                 if audio_norm.shape[-1] <= self.pad_to:
-                    clips.append(torch.nn.functional.pad(audio_norm, (0, self.pad_to - audio_norm.shape[-1])))
+                    clips.append(torch.nn.functional.pad(
+                        audio_norm, (0, self.pad_to - audio_norm.shape[-1])))
                 else:
                     gap = audio_norm.shape[-1] - self.pad_to
-                    start = min(max(random.randint(0, gap-1) + sk * gap // 2, 0), gap-1)
+                    start = min(
+                        max(random.randint(0, gap-1) + sk * gap // 2, 0), gap-1)
                     clips.append(audio_norm[:, start:start+self.pad_to])
             else:
                 clips.append(audio_norm)
@@ -200,16 +211,18 @@ if __name__ == '__main__':
         'n_workers': 1,
         'batch_size': 16,
     }
-    from data import create_dataset, create_dataloader
+    from data import create_dataloader, create_dataset
 
     ds = create_dataset(params)
     dl = create_dataloader(ds, params)
     i = 0
     for b in tqdm(dl):
         for b_ in range(b['clip'].shape[0]):
-            #pass
-            torchaudio.save(f'{i}_clip_{b_}.wav', b['clip'][b_], ds.sampling_rate)
-            torchaudio.save(f'{i}_alt_clip_{b_}.wav', b['alt_clips'][b_], ds.sampling_rate)
+            # pass
+            torchaudio.save(f'{i}_clip_{b_}.wav',
+                            b['clip'][b_], ds.sampling_rate)
+            torchaudio.save(f'{i}_alt_clip_{b_}.wav',
+                            b['alt_clips'][b_], ds.sampling_rate)
             i += 1
         if i > 200:
             break

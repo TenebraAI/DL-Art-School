@@ -7,32 +7,36 @@ import torch.utils.data
 import torchaudio
 from tqdm import tqdm
 
-from data.audio.unsupervised_audio_dataset import load_audio
-from data.util import find_files_of_type, is_audio_file
-from models.audio.tts.tacotron2 import load_filepaths_and_text
-from models.audio.tts.tacotron2 import text_to_sequence
-from utils.util import opt_get
+from dlas.data.audio.unsupervised_audio_dataset import load_audio
+from dlas.data.util import find_files_of_type, is_audio_file
+from dlas.models.audio.tts.tacotron2 import (load_filepaths_and_text,
+                                             text_to_sequence)
+from dlas.utils.util import opt_get
 
 
 def load_tsv(filename):
     with open(filename, encoding='utf-8') as f:
         components = [line.strip().split('\t') for line in f]
         base = os.path.dirname(filename)
-        filepaths_and_text = [[os.path.join(base, f'{component[1]}'), component[0]] for component in components]
+        filepaths_and_text = [
+            [os.path.join(base, f'{component[1]}'), component[0]] for component in components]
     return filepaths_and_text
 
 
 def load_mozilla_cv(filename):
     with open(filename, encoding='utf-8') as f:
-        components = [line.strip().split('\t') for line in f][1:]  # First line is the header
+        components = [line.strip().split('\t')
+                      for line in f][1:]  # First line is the header
         base = os.path.dirname(filename)
-        filepaths_and_text = [[os.path.join(base, f'clips/{component[1]}'), component[2]] for component in components]
+        filepaths_and_text = [[os.path.join(
+            base, f'clips/{component[1]}'), component[2]] for component in components]
     return filepaths_and_text
 
 
 def load_voxpopuli(filename):
     with open(filename, encoding='utf-8') as f:
-        lines = [line.strip().split('\t') for line in f][1:]  # First line is the header
+        lines = [line.strip().split('\t')
+                 for line in f][1:]  # First line is the header
         base = os.path.dirname(filename)
         filepaths_and_text = []
         for line in lines:
@@ -40,7 +44,8 @@ def load_voxpopuli(filename):
                 continue
             file, raw_text, norm_text, speaker_id, split, gender = line
             year = file[:4]
-            filepaths_and_text.append([os.path.join(base, year, f'{file}.ogg.wav'), raw_text])
+            filepaths_and_text.append(
+                [os.path.join(base, year, f'{file}.ogg.wav'), raw_text])
     return filepaths_and_text
 
 
@@ -56,8 +61,10 @@ class TextWavLoader(torch.utils.data.Dataset):
         assert len(self.path) == len(fetcher_mode)
 
         self.load_conditioning = opt_get(hparams, ['load_conditioning'], False)
-        self.conditioning_candidates = opt_get(hparams, ['num_conditioning_candidates'], 3)
-        self.conditioning_length = opt_get(hparams, ['conditioning_length'], 44100)
+        self.conditioning_candidates = opt_get(
+            hparams, ['num_conditioning_candidates'], 3)
+        self.conditioning_length = opt_get(
+            hparams, ['conditioning_length'], 44100)
         self.audiopaths_and_text = []
         for p, fm in zip(self.path, fetcher_mode):
             if fm == 'lj' or fm == 'libritts':
@@ -65,10 +72,12 @@ class TextWavLoader(torch.utils.data.Dataset):
             elif fm == 'tsv':
                 fetcher_fn = load_tsv
             elif fm == 'mozilla_cv':
-                assert not self.load_conditioning  # Conditioning inputs are incompatible with mozilla_cv
+                # Conditioning inputs are incompatible with mozilla_cv
+                assert not self.load_conditioning
                 fetcher_fn = load_mozilla_cv
             elif fm == 'voxpopuli':
-                assert not self.load_conditioning  # Conditioning inputs are incompatible with voxpopuli
+                # Conditioning inputs are incompatible with voxpopuli
+                assert not self.load_conditioning
                 fetcher_fn = load_voxpopuli
             else:
                 raise NotImplementedError()
@@ -96,10 +105,13 @@ class TextWavLoader(torch.utils.data.Dataset):
         return text_norm
 
     def load_conditioning_candidates(self, path):
-        candidates = find_files_of_type('img', os.path.dirname(path), qualifier=is_audio_file)[0]
-        assert len(candidates) < 50000  # Sanity check to ensure we aren't loading "related files" that aren't actually related.
+        candidates = find_files_of_type(
+            'img', os.path.dirname(path), qualifier=is_audio_file)[0]
+        # Sanity check to ensure we aren't loading "related files" that aren't actually related.
+        assert len(candidates) < 50000
         if len(candidates) == 0:
-            print(f"No conditioning candidates found for {path} (not even the clip itself??)")
+            print(
+                f"No conditioning candidates found for {path} (not even the clip itself??)")
             raise NotImplementedError()
         # Sample with replacement. This can get repeats, but more conveniently handles situations where there are not enough candidates.
         related_clips = []
@@ -110,25 +122,28 @@ class TextWavLoader(torch.utils.data.Dataset):
                 rel_clip = F.pad(rel_clip, pad=(0, abs(gap)))
             elif gap > 0:
                 rand_start = random.randint(0, gap)
-                rel_clip = rel_clip[:, rand_start:rand_start+self.conditioning_length]
+                rel_clip = rel_clip[:, rand_start:rand_start +
+                                    self.conditioning_length]
             related_clips.append(rel_clip)
         return torch.stack(related_clips, dim=0)
 
     def __getitem__(self, index):
         try:
-            tseq, wav, text, path = self.get_wav_text_pair(self.audiopaths_and_text[index])
-            cond = self.load_conditioning_candidates(self.audiopaths_and_text[index][0]) if self.load_conditioning else None
+            tseq, wav, text, path = self.get_wav_text_pair(
+                self.audiopaths_and_text[index])
+            cond = self.load_conditioning_candidates(
+                self.audiopaths_and_text[index][0]) if self.load_conditioning else None
         except:
             print(f"error loading {self.audiopaths_and_text[index][0]}")
             return self[index+1]
         if wav is None or \
             (self.max_wav_len is not None and wav.shape[-1] > self.max_wav_len) or \
-            (self.max_text_len is not None and tseq.shape[0] > self.max_text_len):
+                (self.max_text_len is not None and tseq.shape[0] > self.max_text_len):
             # Basically, this audio file is nonexistent or too long to be supported by the dataset.
             # It's hard to handle this situation properly. Best bet is to return the a random valid token and skew the dataset somewhat as a result.
-            #if wav is not None:
+            # if wav is not None:
             #    print(f"Exception {index} wav_len:{wav.shape[-1]} text_len:{tseq.shape[0]} fname: {path}")
-            rv = random.randint(0,len(self)-1)
+            rv = random.randint(0, len(self)-1)
             return self[rv]
         orig_output = wav.shape[-1]
         orig_text_len = tseq.shape[0]
@@ -157,6 +172,7 @@ class TextWavLoader(torch.utils.data.Dataset):
 class TextMelCollate():
     """ Zero-pads model inputs and targets based on number of frames per step
     """
+
     def __call__(self, batch):
         """Collate's training batch from normalized text and wav
         PARAMS
@@ -226,7 +242,7 @@ if __name__ == '__main__':
         'num_conditioning_candidates': 3,
         'conditioning_length': 44100,
     }
-    from data import create_dataset, create_dataloader
+    from data import create_dataloader, create_dataset
 
     ds, c = create_dataset(params, return_collate=True)
     dl = create_dataloader(ds, params, collate_fn=c)
@@ -240,4 +256,5 @@ if __name__ == '__main__':
             print(f'{i} {ib} {b["real_text"][ib]}')
             torchaudio.save(f'{i}_clip_{ib}.wav', b['wav'][ib], ds.sample_rate)
             for c in range(3):
-                torchaudio.save(f'{i}_clip_{ib}_cond{c}.wav', b['conditioning'][ib, c], ds.sample_rate)
+                torchaudio.save(f'{i}_clip_{ib}_cond{c}.wav',
+                                b['conditioning'][ib, c], ds.sample_rate)

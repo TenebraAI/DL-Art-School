@@ -2,12 +2,12 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from transformers import GPT2Config, GPT2Model
-import torch_intermediary as ml
 
-from models.arch_util import AttentionBlock, ResBlock
-from models.audio.tts.lucidrains_dvae import DiscreteVAE
-from trainer.networks import register_model
-from utils.util import opt_get, ceil_multiple, print_network
+import dlas.torch_intermediary as ml
+from dlas.models.arch_util import AttentionBlock, ResBlock
+from dlas.models.audio.tts.lucidrains_dvae import DiscreteVAE
+from dlas.trainer.networks import register_model
+from dlas.utils.util import ceil_multiple, opt_get, print_network
 
 
 class UpperEncoder(nn.Module):
@@ -19,22 +19,30 @@ class UpperEncoder(nn.Module):
                  ):
         super().__init__()
         attn = []
+
         def edim(m):
             dd = min(spec_dim + m * 128, hidden_dim)
             return ceil_multiple(dd, 8)
         self.downsampler = nn.Sequential(
-            ResBlock(spec_dim, out_channels=edim(1), use_conv=True, dims=1, down=True, checkpointing_enabled=checkpointing_enabled),
-            ResBlock(edim(1), out_channels=edim(2), use_conv=True, dims=1, down=True, checkpointing_enabled=checkpointing_enabled),
-            ResBlock(edim(2), out_channels=edim(3), use_conv=True, dims=1, down=True, checkpointing_enabled=checkpointing_enabled),
-            ResBlock(edim(3), out_channels=edim(4), use_conv=True, dims=1, checkpointing_enabled=checkpointing_enabled),
+            ResBlock(spec_dim, out_channels=edim(1), use_conv=True, dims=1,
+                     down=True, checkpointing_enabled=checkpointing_enabled),
+            ResBlock(edim(1), out_channels=edim(2), use_conv=True, dims=1,
+                     down=True, checkpointing_enabled=checkpointing_enabled),
+            ResBlock(edim(2), out_channels=edim(3), use_conv=True, dims=1,
+                     down=True, checkpointing_enabled=checkpointing_enabled),
+            ResBlock(edim(3), out_channels=edim(4), use_conv=True,
+                     dims=1, checkpointing_enabled=checkpointing_enabled),
             ResBlock(edim(4), out_channels=hidden_dim, use_conv=True, dims=1, down=True, checkpointing_enabled=checkpointing_enabled))
         self.encoder = nn.Sequential(
             AttentionBlock(hidden_dim, 4, do_activation=True),
-            ResBlock(hidden_dim, out_channels=hidden_dim, use_conv=True, dims=1, checkpointing_enabled=checkpointing_enabled),
+            ResBlock(hidden_dim, out_channels=hidden_dim, use_conv=True,
+                     dims=1, checkpointing_enabled=checkpointing_enabled),
             AttentionBlock(hidden_dim, 4, do_activation=True),
-            ResBlock(hidden_dim, out_channels=hidden_dim, use_conv=True, dims=1, checkpointing_enabled=checkpointing_enabled),
+            ResBlock(hidden_dim, out_channels=hidden_dim, use_conv=True,
+                     dims=1, checkpointing_enabled=checkpointing_enabled),
             AttentionBlock(hidden_dim, 4, do_activation=True),
-            ResBlock(hidden_dim, out_channels=hidden_dim, use_conv=True, dims=1, checkpointing_enabled=checkpointing_enabled),
+            ResBlock(hidden_dim, out_channels=hidden_dim, use_conv=True,
+                     dims=1, checkpointing_enabled=checkpointing_enabled),
             nn.GroupNorm(8, hidden_dim),
             nn.SiLU(),
             nn.Conv1d(hidden_dim, embedding_dim, 1),
@@ -47,8 +55,6 @@ class UpperEncoder(nn.Module):
         return h
 
 
-    
-
 class GptMusicLower(nn.Module):
     def __init__(self, dim, layers, encoder_out_dim, dropout=0, num_target_vectors=8192, fp16=True, num_vaes=4, vqargs={}):
         super().__init__()
@@ -58,7 +64,8 @@ class GptMusicLower(nn.Module):
                                  n_inner=dim*2, attn_pdrop=dropout, resid_pdrop=dropout, gradient_checkpointing=True,
                                  use_cache=False)
 
-        self.target_quantizers = nn.ModuleList([DiscreteVAE(**vqargs).eval() for _ in range(num_vaes)])
+        self.target_quantizers = nn.ModuleList(
+            [DiscreteVAE(**vqargs).eval() for _ in range(num_vaes)])
         self.upper_encoder = UpperEncoder(256, dim, encoder_out_dim)
         self.encoder_projector = nn.Conv1d(encoder_out_dim, dim, 1)
         self.fp16 = fp16
@@ -75,8 +82,10 @@ class GptMusicLower(nn.Module):
         del self.gpt.wte  # Unused, we'll do our own embeddings.
 
         # nn.Embedding
-        self.embeddings = nn.ModuleList([ml.Embedding(num_target_vectors, dim // num_vaes) for _ in range(num_vaes)])
-        self.heads = nn.ModuleList([ml.Linear(dim, num_target_vectors) for _ in range(num_vaes)])
+        self.embeddings = nn.ModuleList(
+            [ml.Embedding(num_target_vectors, dim // num_vaes) for _ in range(num_vaes)])
+        self.heads = nn.ModuleList(
+            [ml.Linear(dim, num_target_vectors) for _ in range(num_vaes)])
 
     def forward(self, mel, return_latent=False):
         unused_params = []
@@ -92,20 +101,23 @@ class GptMusicLower(nn.Module):
         upper_vector = self.upper_encoder(mel)
         upper_vector = self.encoder_projector(upper_vector)
         # WTB slerp
-        upper_vector = F.interpolate(upper_vector, size=codes.shape[1], mode='linear')
-        upper_vector = upper_vector.permute(0,2,1)
+        upper_vector = F.interpolate(
+            upper_vector, size=codes.shape[1], mode='linear')
+        upper_vector = upper_vector.permute(0, 2, 1)
 
         inputs = codes[:, :-1]
         targets = codes
         upper_vector = upper_vector[:, :-1]
-        h = [embedding(inputs[:, :, i]) for i, embedding in enumerate(self.embeddings)]
+        h = [embedding(inputs[:, :, i])
+             for i, embedding in enumerate(self.embeddings)]
         h = torch.cat(h, dim=-1) + upper_vector
 
         with torch.autocast(mel.device.type, enabled=self.fp16):
             # Stick the conditioning embedding on the front of the input sequence.
             # The transformer will learn how to integrate it.
             # This statement also serves to pre-pad the inputs by one token, which is the basis of the next-token-prediction task. IOW: this is the "START" token.
-            h = torch.cat([self.start_token.repeat(h.shape[0], 1, 1), h], dim=1)
+            h = torch.cat(
+                [self.start_token.repeat(h.shape[0], 1, 1), h], dim=1)
 
             h = self.gpt(inputs_embeds=h, return_dict=True).last_hidden_state
 
@@ -114,8 +126,8 @@ class GptMusicLower(nn.Module):
 
             losses = 0
             for i, head in enumerate(self.heads):
-                logits = head(h).permute(0,2,1)
-                loss = F.cross_entropy(logits, targets[:,:,i])
+                logits = head(h).permute(0, 2, 1)
+                loss = F.cross_entropy(logits, targets[:, :, i])
                 losses = losses + loss
 
         unused_adder = 0
@@ -143,10 +155,10 @@ def register_music_gpt_lower2(opt_net, opt):
 
 def test_lower():
     model = GptMusicLower(dim=1024, encoder_out_dim=256, layers=16, fp16=False, num_target_vectors=8192, num_vaes=4,
-                          vqargs= {'positional_dims': 1, 'channels': 64,
-            'hidden_dim': 512, 'num_resnet_blocks': 3, 'codebook_dim': 512, 'num_tokens': 8192,
-            'num_layers': 0, 'record_codes': True, 'kernel_size': 3, 'use_transposed_convs': False,
-                                                })
+                          vqargs={'positional_dims': 1, 'channels': 64,
+                                  'hidden_dim': 512, 'num_resnet_blocks': 3, 'codebook_dim': 512, 'num_tokens': 8192,
+                                  'num_layers': 0, 'record_codes': True, 'kernel_size': 3, 'use_transposed_convs': False,
+                                  })
     quants = ['X:\\dlas\\experiments\\music_vqvaes\\train_lrdvae_music_low\\models\\7500_generator.pth',
               'X:\\dlas\\experiments\\music_vqvaes\\train_lrdvae_music_mid_low\\models\\11000_generator.pth',
               'X:\\dlas\\experiments\\music_vqvaes\\train_lrdvae_music_mid_high\\models\\11500_generator.pth',
@@ -157,7 +169,7 @@ def test_lower():
     torch.save(model.state_dict(), 'sample.pth')
     print_network(model)
 
-    mel = torch.randn(2,256,400)
+    mel = torch.randn(2, 256, 400)
     model(mel)
     pg = model.get_grad_norm_parameter_groups()
 

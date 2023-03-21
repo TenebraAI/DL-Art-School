@@ -1,15 +1,17 @@
 import math
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-from models.image_generation.srflow.RRDBNet_arch import RRDBNet
-from models.image_generation.srflow.FlowUpsamplerNet import FlowUpsamplerNet
-import models.image_generation.srflow.thops as thops
-import models.image_generation.srflow.flow as flow
-from trainer.networks import register_model
-from utils.util import opt_get
+
+import dlas.models.image_generation.srflow.flow as flow
+import dlas.models.image_generation.srflow.thops as thops
+from dlas.models.image_generation.srflow.FlowUpsamplerNet import \
+    FlowUpsamplerNet
+from dlas.models.image_generation.srflow.RRDBNet_arch import RRDBNet
+from dlas.trainer.networks import register_model
+from dlas.utils.util import opt_get
 
 
 class SRFlowNet(nn.Module):
@@ -18,19 +20,26 @@ class SRFlowNet(nn.Module):
 
         self.opt = opt
         self.quant = 255 if opt_get(opt, ['datasets', 'train', 'quant']) is \
-                            None else opt_get(opt, ['datasets', 'train', 'quant'])
-        initial_stride = opt_get(opt, ['networks', 'generator', 'initial_stride'], 1)
-        self.RRDB = RRDBNet(in_nc, out_nc, nf=nf, nb=nb, gc=gc, scale=scale, opt=opt, initial_conv_stride=initial_stride)
+            None else opt_get(opt, ['datasets', 'train', 'quant'])
+        initial_stride = opt_get(
+            opt, ['networks', 'generator', 'initial_stride'], 1)
+        self.RRDB = RRDBNet(in_nc, out_nc, nf=nf, nb=nb, gc=gc,
+                            scale=scale, opt=opt, initial_conv_stride=initial_stride)
         if 'pretrain_rrdb' in opt['networks']['generator'].keys():
-            rrdb_state_dict = torch.load(opt['networks']['generator']['pretrain_rrdb'])
+            rrdb_state_dict = torch.load(
+                opt['networks']['generator']['pretrain_rrdb'])
             self.RRDB.load_state_dict(rrdb_state_dict, strict=True)
 
-        hidden_channels = opt_get(opt, ['networks', 'generator','flow', 'hidden_channels'])
+        hidden_channels = opt_get(
+            opt, ['networks', 'generator', 'flow', 'hidden_channels'])
         hidden_channels = hidden_channels or 64
-        self.RRDB_training = opt_get(self.opt, ['networks', 'generator','train_RRDB'], default=False)
-        self.flow_scale = opt_get(self.opt, ['networks', 'generator', 'flow_scale'], default=opt['scale'])
+        self.RRDB_training = opt_get(
+            self.opt, ['networks', 'generator', 'train_RRDB'], default=False)
+        self.flow_scale = opt_get(
+            self.opt, ['networks', 'generator', 'flow_scale'], default=opt['scale'])
 
-        self.patch_sz = opt_get(self.opt, ['networks', 'generator', 'flow', 'patch_size'], 160)
+        self.patch_sz = opt_get(
+            self.opt, ['networks', 'generator', 'flow', 'patch_size'], 160)
         self.flowUpsamplerNet = \
             FlowUpsamplerNet((self.patch_sz, self.patch_sz, 3), hidden_channels, K,
                              flow_coupling=opt['networks']['generator']['flow']['coupling'], opt=opt)
@@ -39,11 +48,14 @@ class SRFlowNet(nn.Module):
         self.dbg_logdet = 0
 
     def get_random_z(self, heat, seed=None, batch_size=1, lr_shape=None, device='cuda'):
-        if seed: torch.manual_seed(seed)
+        if seed:
+            torch.manual_seed(seed)
         if opt_get(self.opt, ['networks', 'generator', 'flow', 'split', 'enable']):
             C = self.flowUpsamplerNet.C
-            H = int(self.flow_scale * lr_shape[0] // (self.flowUpsamplerNet.scaleH * self.flow_scale / self.RRDB.scale))
-            W = int(self.flow_scale * lr_shape[1] // (self.flowUpsamplerNet.scaleW * self.flow_scale / self.RRDB.scale))
+            H = int(self.flow_scale * lr_shape[0] // (
+                self.flowUpsamplerNet.scaleH * self.flow_scale / self.RRDB.scale))
+            W = int(self.flow_scale * lr_shape[1] // (
+                self.flowUpsamplerNet.scaleW * self.flow_scale / self.RRDB.scale))
 
             size = (batch_size, C, H, W)
             if heat == 0:
@@ -54,7 +66,8 @@ class SRFlowNet(nn.Module):
             L = opt_get(self.opt, ['networks', 'generator', 'flow', 'L']) or 3
             fac = 2 ** (L - 3)
             z_size = int(self.lr_size // (2 ** (L - 3)))
-            z = torch.normal(mean=0, std=heat, size=(batch_size, 3 * 8 * 8 * fac * fac, z_size, z_size))
+            z = torch.normal(mean=0, std=heat, size=(
+                batch_size, 3 * 8 * 8 * fac * fac, z_size, z_size))
         return z.to(device)
 
     def forward(self, gt=None, lr=None, z=None, eps_std=None, reverse=False, epses=None, reverse_with_grad=False,
@@ -67,8 +80,10 @@ class SRFlowNet(nn.Module):
             assert lr.shape[1] == 3
             if z is None:
                 # Synthesize it. Accommodate mismatches in LR scale and flow_scale, which are normally handled by the RRDB subnet.
-                lr_shape = [d * self.opt['scale'] / self.flow_scale for d in lr.shape[2:]]
-                z = self.get_random_z(eps_std, batch_size=lr.shape[0], lr_shape=lr_shape, device=lr.device)
+                lr_shape = [d * self.opt['scale'] /
+                            self.flow_scale for d in lr.shape[2:]]
+                z = self.get_random_z(
+                    eps_std, batch_size=lr.shape[0], lr_shape=lr_shape, device=lr.device)
             if reverse_with_grad:
                 return self.reverse_flow(lr, z, y_onehot=y_label, eps_std=eps_std, epses=epses, lr_enc=lr_enc,
                                          add_gt_noise=add_gt_noise)
@@ -92,7 +107,8 @@ class SRFlowNet(nn.Module):
 
         if add_gt_noise:
             # Setup
-            noiseQuant = opt_get(self.opt, ['networks', 'generator','flow', 'augmentation', 'noiseQuant'], True)
+            noiseQuant = opt_get(
+                self.opt, ['networks', 'generator', 'flow', 'augmentation', 'noiseQuant'], True)
             if noiseQuant:
                 z = z + ((torch.rand(z.shape, device=z.device) - 0.5) / self.quant)
             logdet = logdet + float(-np.log(self.quant) * pixels)
@@ -124,11 +140,13 @@ class SRFlowNet(nn.Module):
 
     def rrdbPreprocessing(self, lr):
         rrdbResults = self.RRDB(lr, get_steps=True)
-        block_idxs = opt_get(self.opt, ['networks', 'generator', 'flow', 'stackRRDB', 'blocks']) or []
+        block_idxs = opt_get(
+            self.opt, ['networks', 'generator', 'flow', 'stackRRDB', 'blocks']) or []
         if len(block_idxs) > 0:
-            concat = torch.cat([rrdbResults["block_{}".format(idx)] for idx in block_idxs], dim=1)
+            concat = torch.cat([rrdbResults["block_{}".format(idx)]
+                               for idx in block_idxs], dim=1)
 
-            if opt_get(self.opt, ['networks', 'generator','flow', 'stackRRDB', 'concat']) or False:
+            if opt_get(self.opt, ['networks', 'generator', 'flow', 'stackRRDB', 'concat']) or False:
                 keys = ['last_lr_fea', 'fea_up1', 'fea_up2', 'fea_up4']
                 if 'fea_up0' in rrdbResults.keys():
                     keys.append('fea_up0')
@@ -141,12 +159,13 @@ class SRFlowNet(nn.Module):
                 for k in keys:
                     h = rrdbResults[k].shape[2]
                     w = rrdbResults[k].shape[3]
-                    rrdbResults[k] = torch.cat([rrdbResults[k], F.interpolate(concat, (h, w))], dim=1)
+                    rrdbResults[k] = torch.cat(
+                        [rrdbResults[k], F.interpolate(concat, (h, w))], dim=1)
         return rrdbResults
 
     def get_score(self, disc_loss_sigma, z):
         score_real = 0.5 * (1 - 1 / (disc_loss_sigma ** 2)) * thops.sum(z ** 2, dim=[1, 2, 3]) - \
-                     z.shape[1] * z.shape[2] * z.shape[3] * math.log(disc_loss_sigma)
+            z.shape[1] * z.shape[2] * z.shape[3] * math.log(disc_loss_sigma)
         return -score_real
 
     def reverse_flow(self, lr, z, y_onehot, eps_std, epses=None, lr_enc=None, add_gt_noise=True):
@@ -172,4 +191,4 @@ class SRFlowNet(nn.Module):
 @register_model
 def register_srflow(opt_net, opt):
     return SRFlowNet(in_nc=3, out_nc=3, nf=opt_net['nf'], nb=opt_net['nb'], scale=opt_net['scale'],
-                             K=opt_net['K'], opt=opt)
+                     K=opt_net['K'], opt=opt)

@@ -4,10 +4,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.init import kaiming_normal
-
 from torchvision.models.resnet import BasicBlock, Bottleneck
-from models.arch_util import ConvGnSilu, ConvBnSilu, ConvBnRelu
-from trainer.networks import register_model
+
+from dlas.models.arch_util import ConvBnRelu, ConvBnSilu, ConvGnSilu
+from dlas.trainer.networks import register_model
 
 
 def constant_init(module, val, bias=0):
@@ -15,6 +15,7 @@ def constant_init(module, val, bias=0):
         nn.init.constant_(module.weight, val)
     if hasattr(module, 'bias') and module.bias is not None:
         nn.init.constant_(module.bias, bias)
+
 
 def kaiming_init(module,
                  a=0,
@@ -32,6 +33,7 @@ def kaiming_init(module,
     if hasattr(module, 'bias') and module.bias is not None:
         nn.init.constant_(module.bias, bias)
 
+
 FILTER_SIZE_MAP = {
     1: 32,
     2: 64,
@@ -41,6 +43,7 @@ FILTER_SIZE_MAP = {
     6: 256,
     7: 256,
 }
+
 
 def make_res_layer(block,
                    inplanes,
@@ -78,6 +81,7 @@ def make_res_layer(block,
                 dilation=dilation))
 
     return nn.Sequential(*layers)
+
 
 # The fixed SpineNet architecture discovered by NAS.
 # Each element represents a specification of a building block:
@@ -133,20 +137,20 @@ SCALING_MAP = {
 
 
 class BlockSpec(object):
-  """A container class that specifies the block configuration for SpineNet."""
+    """A container class that specifies the block configuration for SpineNet."""
 
-  def __init__(self, level, block_fn, input_offsets, is_output):
-    self.level = level
-    self.block_fn = block_fn
-    self.input_offsets = input_offsets
-    self.is_output = is_output
+    def __init__(self, level, block_fn, input_offsets, is_output):
+        self.level = level
+        self.block_fn = block_fn
+        self.input_offsets = input_offsets
+        self.is_output = is_output
 
 
 def build_block_specs(block_specs=None):
-  """Builds the list of BlockSpec objects for SpineNet."""
-  if not block_specs:
-    block_specs = SPINENET_BLOCK_SPECS
-  return [BlockSpec(*b) for b in block_specs]
+    """Builds the list of BlockSpec objects for SpineNet."""
+    if not block_specs:
+        block_specs = SPINENET_BLOCK_SPECS
+    return [BlockSpec(*b) for b in block_specs]
 
 
 class Resample(nn.Module):
@@ -156,10 +160,13 @@ class Resample(nn.Module):
         new_in_channels = int(in_channels * alpha)
         if block_type == Bottleneck:
             in_channels *= 4
-        self.squeeze_conv = ConvGnSilu(in_channels, new_in_channels, kernel_size=1)
+        self.squeeze_conv = ConvGnSilu(
+            in_channels, new_in_channels, kernel_size=1)
         if scale < 1:
-            self.downsample_conv = ConvGnSilu(new_in_channels, new_in_channels, kernel_size=3, stride=2)
-        self.expand_conv = ConvGnSilu(new_in_channels, out_channels, kernel_size=1, activation=False)
+            self.downsample_conv = ConvGnSilu(
+                new_in_channels, new_in_channels, kernel_size=3, stride=2)
+        self.expand_conv = ConvGnSilu(
+            new_in_channels, out_channels, kernel_size=1, activation=False)
 
     def _resize(self, x):
         if self.scale == 1:
@@ -170,7 +177,8 @@ class Resample(nn.Module):
             x = self.downsample_conv(x)
             if self.scale < 0.5:
                 new_kernel_size = 3 if self.scale >= 0.25 else 5
-                x = F.max_pool2d(x, kernel_size=new_kernel_size, stride=int(0.5/self.scale), padding=new_kernel_size//2)
+                x = F.max_pool2d(x, kernel_size=new_kernel_size, stride=int(
+                    0.5/self.scale), padding=new_kernel_size//2)
             return x
 
     def forward(self, inputs):
@@ -182,9 +190,11 @@ class Resample(nn.Module):
 
 class Merge(nn.Module):
     """Merge two input tensors"""
+
     def __init__(self, block_spec, alpha, filter_size_scale):
         super(Merge, self).__init__()
-        out_channels = int(FILTER_SIZE_MAP[block_spec.level] * filter_size_scale)
+        out_channels = int(
+            FILTER_SIZE_MAP[block_spec.level] * filter_size_scale)
         if block_spec.block_fn == Bottleneck:
             out_channels *= 4
         self.block = block_spec.block_fn
@@ -194,7 +204,8 @@ class Merge(nn.Module):
             in_channels = int(FILTER_SIZE_MAP[spec.level] * filter_size_scale)
             scale = 2**(spec.level - block_spec.level)
             self.resample_ops.append(
-                Resample(in_channels, out_channels, scale, spec.block_fn, alpha)
+                Resample(in_channels, out_channels,
+                         scale, spec.block_fn, alpha)
             )
 
     def forward(self, inputs):
@@ -207,6 +218,7 @@ class Merge(nn.Module):
 
 class SpineNet(nn.Module):
     """Class to build SpineNet backbone"""
+
     def __init__(self,
                  arch,
                  in_channels=3,
@@ -227,7 +239,8 @@ class SpineNet(nn.Module):
         self._num_init_blocks = 2
         self._early_double_reduce = double_reduce_early
         self.zero_init_residual = zero_init_residual
-        assert min(output_level) > 2 and max(output_level) < 8, "Output level out of range"
+        assert min(output_level) > 2 and max(
+            output_level) < 8, "Output level out of range"
         self.output_level = output_level
         self.use_input_norm = use_input_norm
 
@@ -264,11 +277,12 @@ class SpineNet(nn.Module):
         self.endpoint_convs = nn.ModuleDict()
         for block_spec in self._block_specs:
             if block_spec.is_output:
-                in_channels = int(FILTER_SIZE_MAP[block_spec.level]*self._filter_size_scale) * 4
+                in_channels = int(
+                    FILTER_SIZE_MAP[block_spec.level]*self._filter_size_scale) * 4
                 self.endpoint_convs[str(block_spec.level)] = ConvGnSilu(in_channels,
-                                                                   self._endpoints_num_filters,
-                                                                   kernel_size=1,
-                                                                   activation=False)
+                                                                        self._endpoints_num_filters,
+                                                                        kernel_size=1,
+                                                                        activation=False)
 
     def _make_scale_permuted_network(self):
         self.merge_ops = nn.ModuleList()
@@ -277,7 +291,8 @@ class SpineNet(nn.Module):
             self.merge_ops.append(
                 Merge(spec, self._resample_alpha, self._filter_size_scale)
             )
-            channels = int(FILTER_SIZE_MAP[spec.level] * self._filter_size_scale)
+            channels = int(
+                FILTER_SIZE_MAP[spec.level] * self._filter_size_scale)
             in_channels = channels * 4 if spec.block_fn == Bottleneck else channels
             self.scale_permuted_blocks.append(
                 make_res_layer(spec.block_fn,
@@ -302,8 +317,10 @@ class SpineNet(nn.Module):
     def forward(self, input):
         if self.conv1 is not None:
             if self.use_input_norm:
-                mean = torch.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(input.device)
-                std = torch.Tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(input.device)
+                mean = torch.Tensor([0.485, 0.456, 0.406]).view(
+                    1, 3, 1, 1).to(input.device)
+                std = torch.Tensor([0.229, 0.224, 0.225]).view(
+                    1, 3, 1, 1).to(input.device)
                 input = (input - mean) / std
             feat = self.conv1(input)
             feat = self.maxpool(feat)
@@ -316,7 +333,8 @@ class SpineNet(nn.Module):
         num_outgoing_connections = [0, 0]
 
         for i, spec in enumerate(self._block_specs):
-            target_feat = self.merge_ops[i]([block_feats[feat_idx] for feat_idx in spec.input_offsets])
+            target_feat = self.merge_ops[i](
+                [block_feats[feat_idx] for feat_idx in spec.input_offsets])
             # Connect intermediate blocks with outdegree 0 to the output block.
             if spec.is_output:
                 for j, (j_feat, j_connections) in enumerate(
@@ -350,16 +368,20 @@ class SpinenetWithLogits(SpineNet):
                  activation='relu',
                  use_input_norm=False,
                  double_reduce_early=True):
-        super().__init__(arch, in_channels, output_level, conv_cfg, norm_cfg, zero_init_residual, activation, use_input_norm, double_reduce_early)
+        super().__init__(arch, in_channels, output_level, conv_cfg, norm_cfg,
+                         zero_init_residual, activation, use_input_norm, double_reduce_early)
         self.output_to_attach = output_to_attach
         self.tail = nn.Sequential(ConvBnRelu(256, 128, kernel_size=1, activation=True, norm=True, bias=False),
-                                  ConvBnRelu(128, 64, kernel_size=1, activation=True, norm=True, bias=False),
-                                  ConvBnRelu(64, num_labels, kernel_size=1, activation=False, norm=False, bias=True),
+                                  ConvBnRelu(
+                                      128, 64, kernel_size=1, activation=True, norm=True, bias=False),
+                                  ConvBnRelu(64, num_labels, kernel_size=1,
+                                             activation=False, norm=False, bias=True),
                                   nn.Softmax(dim=1))
 
     def forward(self, x):
         fea = super().forward(x)[self.output_to_attach]
         return self.tail(fea)
+
 
 @register_model
 def register_spinenet(opt_net, opt):

@@ -1,8 +1,8 @@
 import torch
 import torchaudio
 
-from data.audio.unsupervised_audio_dataset import load_audio
-from scripts.do_to_files import do_to_files
+from dlas.data.audio.unsupervised_audio_dataset import load_audio
+from dlas.scripts.do_to_files import do_to_files
 
 
 def get_spec_mags(clip):
@@ -19,6 +19,7 @@ def filter_no_hifreq_data(path, output_path):
     if stft.mean() < .08:
         with open(output_path, 'a') as o:
             o.write(f'{path}\n')
+
 
 if __name__ == '__main__':
     do_to_files(filter_no_hifreq_data)

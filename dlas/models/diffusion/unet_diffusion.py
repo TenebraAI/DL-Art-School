@@ -1,26 +1,19 @@
+import math
 from abc import abstractmethod
 
-import math
-
+import dlas.torch_intermediary as ml
 import numpy as np
 import torch
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision  # For debugging, not actually used.
-
-from models.diffusion.fp16_util import convert_module_to_f16, convert_module_to_f32
-from models.diffusion.nn import (
-    conv_nd,
-    linear,
-    avg_pool_nd,
-    zero_module,
-    normalization,
-    timestep_embedding,
-)
-from trainer.networks import register_model
-from utils.util import checkpoint
-import torch_intermediary as ml
+from dlas.models.diffusion.fp16_util import (convert_module_to_f16,
+                                             convert_module_to_f32)
+from dlas.models.diffusion.nn import (avg_pool_nd, conv_nd, linear,
+                                      normalization, timestep_embedding,
+                                      zero_module)
+from dlas.trainer.networks import register_model
+from dlas.utils.util import checkpoint
 
 
 class AttentionPool2d(nn.Module):
@@ -48,7 +41,8 @@ class AttentionPool2d(nn.Module):
         b, c, *_spatial = x.shape
         x = x.reshape(b, c, -1)  # NC(HW)
         x = th.cat([x.mean(dim=-1, keepdim=True), x], dim=-1)  # NC(HW+1)
-        x = x + self.positional_embedding[None, :, :x.shape[-1]].to(x.dtype)  # NC(HW+1)
+        x = x + self.positional_embedding[None,
+                                          :, :x.shape[-1]].to(x.dtype)  # NC(HW+1)
         x = self.qkv_proj(x)
         x = self.attention(x)
         x = self.c_proj(x)
@@ -109,7 +103,8 @@ class Upsample(nn.Module):
             if dims == 1:
                 ksize = 5
                 pad = 2
-            self.conv = conv_nd(dims, self.channels, self.out_channels, ksize, padding=pad)
+            self.conv = conv_nd(dims, self.channels,
+                                self.out_channels, ksize, padding=pad)
 
     def forward(self, x):
         assert x.shape[1] == self.channels
@@ -152,7 +147,7 @@ class Downsample(nn.Module):
         elif dims == 2:
             stride = 2
         else:
-            stride = (1,2,2)
+            stride = (1, 2, 2)
         if factor is not None:
             stride = factor
         if use_conv:
@@ -209,7 +204,8 @@ class ResBlock(TimestepBlock):
         self.in_layers = nn.Sequential(
             normalization(channels),
             nn.SiLU(),
-            conv_nd(dims, channels, self.out_channels, kernel_size, padding=padding),
+            conv_nd(dims, channels, self.out_channels,
+                    kernel_size, padding=padding),
         )
 
         self.updown = up or down
@@ -235,7 +231,8 @@ class ResBlock(TimestepBlock):
             nn.SiLU(),
             nn.Dropout(p=dropout),
             zero_module(
-                conv_nd(dims, self.out_channels, self.out_channels, kernel_size, padding=padding)
+                conv_nd(dims, self.out_channels, self.out_channels,
+                        kernel_size, padding=padding)
             ),
         )
 
@@ -246,7 +243,8 @@ class ResBlock(TimestepBlock):
                 dims, channels, self.out_channels, kernel_size, padding=padding
             )
         else:
-            self.skip_connection = conv_nd(dims, channels, self.out_channels, 1)
+            self.skip_connection = conv_nd(
+                dims, channels, self.out_channels, 1)
 
     def forward(self, x, emb):
         """
@@ -374,13 +372,15 @@ class QKVAttentionLegacy(nn.Module):
         bs, width, length = qkv.shape
         assert width % (3 * self.n_heads) == 0
         ch = width // (3 * self.n_heads)
-        q, k, v = qkv.reshape(bs * self.n_heads, ch * 3, length).split(ch, dim=1)
+        q, k, v = qkv.reshape(bs * self.n_heads, ch * 3,
+                              length).split(ch, dim=1)
         scale = 1 / math.sqrt(math.sqrt(ch))
         weight = th.einsum(
             "bct,bcs->bts", q * scale, k * scale
         )  # More stable with f16 than dividing afterwards
         if rel_pos is not None:
-            weight = rel_pos(weight.reshape(bs, self.n_heads, weight.shape[-2], weight.shape[-1])).reshape(bs * self.n_heads, weight.shape[-2], weight.shape[-1])
+            weight = rel_pos(weight.reshape(bs, self.n_heads, weight.shape[-2], weight.shape[-1])).reshape(
+                bs * self.n_heads, weight.shape[-2], weight.shape[-1])
         weight = th.softmax(weight.float(), dim=-1).type(weight.dtype)
         if mask is not None:
             # The proper way to do this is to mask before the softmax using -inf, but that doesn't work properly on CPUs.
@@ -428,7 +428,8 @@ class QKVAttention(nn.Module):
             mask = mask.repeat(self.n_heads, 1).unsqueeze(1)
             weight = weight * mask
         weight = th.softmax(weight.float(), dim=-1).type(weight.dtype)
-        a = th.einsum("bts,bcs->bct", weight, v.reshape(bs * self.n_heads, ch, length))
+        a = th.einsum("bts,bcs->bct", weight,
+                      v.reshape(bs * self.n_heads, ch, length))
         return a.reshape(bs, -1, length)
 
     @staticmethod
@@ -519,7 +520,8 @@ class UNetModel(nn.Module):
             # nn.Embedding
             self.label_emb = ml.Embedding(num_classes, time_embed_dim)
         self.use_raw_y_as_embedding = use_raw_y_as_embedding
-        assert not ((self.num_classes is not None) and use_raw_y_as_embedding)  # These are mutually-exclusive.
+        # These are mutually-exclusive.
+        assert not ((self.num_classes is not None) and use_raw_y_as_embedding)
 
         self.input_blocks = nn.ModuleList(
             [
@@ -651,7 +653,8 @@ class UNetModel(nn.Module):
         self.out = nn.Sequential(
             normalization(ch),
             nn.SiLU(),
-            zero_module(conv_nd(dims, model_channels, out_channels, 3, padding=1)),
+            zero_module(conv_nd(dims, model_channels,
+                        out_channels, 3, padding=1)),
         )
 
     def forward(self, x, timesteps, y=None):
@@ -664,7 +667,8 @@ class UNetModel(nn.Module):
         :return: an [N x C x ...] Tensor of outputs.
         """
         hs = []
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+        emb = self.time_embed(timestep_embedding(
+            timesteps, self.model_channels))
 
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)
@@ -697,16 +701,20 @@ class SuperResModel(UNetModel):
 
     def forward(self, x, timesteps, low_res=None, corruption_factor=None, **kwargs):
         b, _, new_height, new_width = x.shape
-        upsampled = F.interpolate(low_res, (new_height, new_width), mode="bilinear")
+        upsampled = F.interpolate(
+            low_res, (new_height, new_width), mode="bilinear")
         if corruption_factor is not None:
             if corruption_factor.shape[1] != self.num_corruptions:
                 if not hasattr(self, '_corruption_factor_warning'):
-                    print(f"Warning! Dataloader gave us {corruption_factor.shape[1]} dim but we are only processing {self.num_corruptions}. The last n corruptions will be truncated.")
+                    print(
+                        f"Warning! Dataloader gave us {corruption_factor.shape[1]} dim but we are only processing {self.num_corruptions}. The last n corruptions will be truncated.")
                     self._corruption_factor_warning = True
                 corruption_factor = corruption_factor[:, :self.num_corruptions]
-            corruption_factor = corruption_factor.view(b, -1, 1, 1).repeat(1, 1, new_height, new_width)
+            corruption_factor = corruption_factor.view(
+                b, -1, 1, 1).repeat(1, 1, new_height, new_width)
         else:
-            corruption_factor = torch.zeros((b, self.num_corruptions, new_height, new_width), dtype=torch.float, device=x.device)
+            corruption_factor = torch.zeros(
+                (b, self.num_corruptions, new_height, new_width), dtype=torch.float, device=x.device)
         upsampled = torch.cat([upsampled, corruption_factor], dim=1)
         x = th.cat([x, upsampled], dim=1)
         res = super().forward(x, timesteps, **kwargs)
@@ -891,7 +899,8 @@ class EncoderUNetModel(nn.Module):
         :param timesteps: a 1-D batch of timesteps.
         :return: an [N x K] Tensor of outputs.
         """
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+        emb = self.time_embed(timestep_embedding(
+            timesteps, self.model_channels))
 
         results = []
         h = x.type(self.dtype)
@@ -908,9 +917,11 @@ class EncoderUNetModel(nn.Module):
             h = h.type(x.dtype)
             return self.out(h)
 
+
 @register_model
 def register_unet_diffusion(opt_net, opt):
     return SuperResModel(**opt_net['args'])
+
 
 if __name__ == '__main__':
     attention_ds = []
@@ -918,8 +929,8 @@ if __name__ == '__main__':
         attention_ds.append(128 // int(res))
     srm = SuperResModel(image_size=128, in_channels=3, model_channels=64, out_channels=3, num_res_blocks=1, attention_resolutions=attention_ds, num_heads=4,
                         num_heads_upsample=-1, use_scale_shift_norm=True)
-    x = torch.randn(1,3,128,128)
-    l = torch.randn(1,3,32,32)
+    x = torch.randn(1, 3, 128, 128)
+    l = torch.randn(1, 3, 32, 32)
     ts = torch.LongTensor([555])
     y = srm(x, ts, low_res=l)
     print(y.shape, y.mean(), y.std(), y.min(), y.max())

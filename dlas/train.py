@@ -1,29 +1,27 @@
-import os
-import sys
-import math
 import argparse
-import random
-import logging
-import shutil
 import json
-
-from tqdm import tqdm
+import logging
+import math
+import os
+import random
+import shutil
+import sys
+from datetime import datetime
+from time import time
 
 import torch
-from data.data_sampler import DistIterSampler
-from trainer.eval.evaluator import create_evaluator
+from tqdm import tqdm
 
-from utils import util, options as option
-from data import create_dataloader, create_dataset, get_dataset_debugger
-from trainer.ExtensibleTrainer import ExtensibleTrainer
-from time import time
-from datetime import datetime
+from dlas.data import create_dataloader, create_dataset, get_dataset_debugger
+from dlas.data.data_sampler import DistIterSampler
+from dlas.trainer.eval.evaluator import create_evaluator
+from dlas.trainer.ExtensibleTrainer import ExtensibleTrainer
+from dlas.utils import options as option
+from dlas.utils import util
+from dlas.utils.util import map_cuda_to_correct_device, opt_get
 
-from utils.util import opt_get, map_cuda_to_correct_device
 
-import tortoise.utils.torch_intermediary as ml
-
-def try_json( data ):
+def try_json(data):
     reduced = {}
     for k, v in data.items():
         try:
@@ -33,7 +31,8 @@ def try_json( data ):
         reduced[k] = v
     return json.dumps(reduced)
 
-def process_metrics( metrics ):
+
+def process_metrics(metrics):
     reduced = {}
     for metric in metrics:
         d = metric.as_dict() if hasattr(metric, 'as_dict') else metric
@@ -44,11 +43,12 @@ def process_metrics( metrics ):
                 else:
                     reduced[k] = [v]
     logs = {}
-    
+
     for k, v in reduced.items():
         logs[k] = torch.stack(v).mean().item()
 
     return logs
+
 
 def init_dist(backend, **kwargs):
     # These packages have globals that screw with Windows, so only import them if needed.
@@ -58,6 +58,7 @@ def init_dist(backend, **kwargs):
     assert rank < torch.cuda.device_count()
     torch.cuda.set_device(rank)
     dist.init_process_group(backend=backend, **kwargs)
+
 
 class Trainer:
 
@@ -69,50 +70,58 @@ class Trainer:
         self.iteration_rate = 0
         self.total_training_data_encountered = 0
 
-        self.use_tqdm = False # self.rank <= 0
+        self.use_tqdm = False  # self.rank <= 0
 
-        #### loading resume state if exists
+        # loading resume state if exists
         if opt['path'].get('resume_state', None):
             # distributed resuming: all load into default GPU
-            resume_state = torch.load(opt['path']['resume_state'], map_location=map_cuda_to_correct_device)
+            resume_state = torch.load(
+                opt['path']['resume_state'], map_location=map_cuda_to_correct_device)
         else:
             resume_state = None
 
-        #### mkdir and loggers
-        if self.rank <= 0:  # normal training (self.rank -1) OR distributed training (self.rank 0)
+        # mkdir and loggers
+        # normal training (self.rank -1) OR distributed training (self.rank 0)
+        if self.rank <= 0:
             if resume_state is None:
                 util.mkdir_and_rename(
                     opt['path']['experiments_root'])  # rename experiment folder if exists
                 util.mkdirs(
                     (path for key, path in opt['path'].items() if not key == 'experiments_root' and path is not None
                      and 'pretrain_model' not in key and 'resume' not in key))
-            shutil.copy(opt_path, os.path.join(opt['path']['experiments_root'], f'{datetime.now().strftime("%d%m%Y_%H%M%S")}_{os.path.basename(opt_path)}'))
+            shutil.copy(opt_path, os.path.join(
+                opt['path']['experiments_root'], f'{datetime.now().strftime("%d%m%Y_%H%M%S")}_{os.path.basename(opt_path)}'))
 
             # config loggers. Before it, the log will not work
-            util.setup_logger('base', opt['path']['log'], 'train_' + opt['name'], level=logging.INFO, screen=True, tofile=True)
+            util.setup_logger('base', opt['path']['log'], 'train_' +
+                              opt['name'], level=logging.INFO, screen=True, tofile=True)
             self.logger = logging.getLogger('base')
             self.logger.info(option.dict2str(opt))
         else:
-            util.setup_logger('base', opt['path']['log'], 'train', level=logging.INFO, screen=False)
+            util.setup_logger(
+                'base', opt['path']['log'], 'train', level=logging.INFO, screen=False)
             self.logger = logging.getLogger('base')
 
         if resume_state is not None:
-            option.check_resume(opt, resume_state['iter'])  # check resume options
+            # check resume options
+            option.check_resume(opt, resume_state['iter'])
 
         # convert to NoneDict, which returns None for missing keys
         opt = option.dict_to_nonedict(opt)
         self.opt = opt
 
-        #### random seed
+        # random seed
         seed = opt['train']['manual_seed']
         if seed is None:
             seed = random.randint(1, 10000)
         if self.rank <= 0:
             self.logger.info('Random seed: {}'.format(seed))
-        seed += self.rank  # Different multiprocessing instances should behave differently.
+        # Different multiprocessing instances should behave differently.
+        seed += self.rank
         util.set_random_seed(seed)
 
-        torch.backends.cudnn.benchmark = opt_get(opt, ['cuda_benchmarking_enabled'], True)
+        torch.backends.cudnn.benchmark = opt_get(
+            opt, ['cuda_benchmarking_enabled'], True)
         torch.backends.cuda.matmul.allow_tf32 = True
         # torch.backends.cudnn.deterministic = True
         if opt_get(opt, ['anomaly_detection'], False):
@@ -121,25 +130,31 @@ class Trainer:
         # Save the compiled opt dict to the global loaded_options variable.
         util.loaded_options = opt
 
-        #### create train and val dataloader
+        # create train and val dataloader
         dataset_ratio = 1  # enlarge the size of each epoch
         for phase, dataset_opt in opt['datasets'].items():
             if phase == 'train':
-                self.train_set, collate_fn = create_dataset(dataset_opt, return_collate=True)
+                self.train_set, collate_fn = create_dataset(
+                    dataset_opt, return_collate=True)
                 self.dataset_debugger = get_dataset_debugger(dataset_opt)
                 if self.dataset_debugger is not None and resume_state is not None:
-                    self.dataset_debugger.load_state(opt_get(resume_state, ['dataset_debugger_state'], {}))
-                train_size = int(math.ceil(len(self.train_set) / dataset_opt['batch_size']))
+                    self.dataset_debugger.load_state(
+                        opt_get(resume_state, ['dataset_debugger_state'], {}))
+                train_size = int(
+                    math.ceil(len(self.train_set) / dataset_opt['batch_size']))
                 total_iters = int(opt['train']['niter'])
                 self.total_epochs = int(math.ceil(total_iters / train_size))
                 if opt['dist']:
-                    self.train_sampler = DistIterSampler(self.train_set, self.world_size, self.rank, dataset_ratio)
-                    self.total_epochs = int(math.ceil(total_iters / (train_size * dataset_ratio)))
+                    self.train_sampler = DistIterSampler(
+                        self.train_set, self.world_size, self.rank, dataset_ratio)
+                    self.total_epochs = int(
+                        math.ceil(total_iters / (train_size * dataset_ratio)))
                     shuffle = False
                 else:
                     self.train_sampler = None
                     shuffle = True
-                self.train_loader = create_dataloader(self.train_set, dataset_opt, opt, self.train_sampler, collate_fn=collate_fn, shuffle=shuffle)
+                self.train_loader = create_dataloader(
+                    self.train_set, dataset_opt, opt, self.train_sampler, collate_fn=collate_fn, shuffle=shuffle)
                 if self.rank <= 0:
                     self.logger.info('Number of training data elements: {:,d}, iters: {:,d}'.format(
                         len(self.train_set), train_size))
@@ -149,19 +164,22 @@ class Trainer:
                 if not opt_get(opt, ['eval', 'pure'], False):
                     continue
 
-                self.val_set, collate_fn = create_dataset(dataset_opt, return_collate=True)
-                self.val_loader = create_dataloader(self.val_set, dataset_opt, opt, None, collate_fn=collate_fn)
+                self.val_set, collate_fn = create_dataset(
+                    dataset_opt, return_collate=True)
+                self.val_loader = create_dataloader(
+                    self.val_set, dataset_opt, opt, None, collate_fn=collate_fn)
                 if self.rank <= 0:
                     self.logger.info('Number of val images in [{:s}]: {:d}'.format(
                         dataset_opt['name'], len(self.val_set)))
             else:
-                raise NotImplementedError('Phase [{:s}] is not recognized.'.format(phase))
+                raise NotImplementedError(
+                    'Phase [{:s}] is not recognized.'.format(phase))
         assert self.train_loader is not None
 
-        #### create model
+        # create model
         self.model = ExtensibleTrainer(opt)
 
-        ### Evaluators
+        # Evaluators
         self.evaluators = []
         if 'eval' in opt.keys() and 'evaluators' in opt['eval'].keys():
             # In "pure" mode, we propagate through the normal training steps, but use validation data instead and average
@@ -173,39 +191,47 @@ class Trainer:
                 self.evaluators.append(create_evaluator(self.model.networks[ev_opt['for']],
                                                         ev_opt, self.model.env))
 
-        #### resume training
+        # resume training
         if resume_state:
             self.logger.info('Resuming training from epoch: {}, iter: {}.'.format(
                 resume_state['epoch'], resume_state['iter']))
 
             self.start_epoch = resume_state['epoch']
             self.current_step = resume_state['iter']
-            self.total_training_data_encountered = opt_get(resume_state, ['total_data_processed'], 0)
+            self.total_training_data_encountered = opt_get(
+                resume_state, ['total_data_processed'], 0)
             if opt_get(opt, ['path', 'optimizer_reset'], False):
                 print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
                 print('!! RESETTING OPTIMIZER STATES')
                 print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
             else:
-                self.model.resume_training(resume_state, 'amp_opt_level' in opt.keys())  # handle optimizers and schedulers
+                # handle optimizers and schedulers
+                self.model.resume_training(
+                    resume_state, 'amp_opt_level' in opt.keys())
         else:
-            self.current_step = -1 if 'start_step' not in opt.keys() else opt['start_step']
-            self.total_training_data_encountered = 0 if 'training_data_encountered' not in opt.keys() else opt['training_data_encountered']
+            self.current_step = - \
+                1 if 'start_step' not in opt.keys() else opt['start_step']
+            self.total_training_data_encountered = 0 if 'training_data_encountered' not in opt.keys(
+            ) else opt['training_data_encountered']
             self.start_epoch = 0
         if 'force_start_step' in opt.keys():
             self.current_step = opt['force_start_step']
-            self.total_training_data_encountered = self.current_step * opt['datasets']['train']['batch_size']
+            self.total_training_data_encountered = self.current_step * \
+                opt['datasets']['train']['batch_size']
         opt['current_step'] = self.current_step
 
         self.epoch = self.start_epoch
 
-        #### validation
+        # validation
         if 'val_freq' in opt['train'].keys():
-            self.val_freq = opt['train']['val_freq'] * opt['datasets']['train']['batch_size']
+            self.val_freq = opt['train']['val_freq'] * \
+                opt['datasets']['train']['batch_size']
         else:
             self.val_freq = int(opt['train']['val_freq_megasamples'] * 1000000)
 
         self.next_eval_step = self.total_training_data_encountered + self.val_freq
-        del resume_state  # For whatever reason, this relieves a memory burden on the first GPU for some training sessions.
+        # For whatever reason, this relieves a memory burden on the first GPU for some training sessions.
+        del resume_state
 
     def save(self):
         self.model.save(self.current_step)
@@ -225,22 +251,26 @@ class Trainer:
             _t = time()
 
         opt = self.opt
-        batch_size = self.opt['datasets']['train']['batch_size']  # It may seem weird to derive this from opt, rather than train_data. The reason this is done is
-                                                                  # because train_data is process-local while the opt variant represents all of the data fed across all GPUs.
+        # It may seem weird to derive this from opt, rather than train_data. The reason this is done is
+        batch_size = self.opt['datasets']['train']['batch_size']
+        # because train_data is process-local while the opt variant represents all of the data fed across all GPUs.
         self.current_step += 1
         self.total_training_data_encountered += batch_size
-        will_log = False # self.current_step % opt['logger']['print_freq'] == 0
+        # self.current_step % opt['logger']['print_freq'] == 0
+        will_log = False
 
-        #### update learning rate
-        self.model.update_learning_rate(self.current_step, warmup_iter=opt['train']['warmup_iter'])
+        # update learning rate
+        self.model.update_learning_rate(
+            self.current_step, warmup_iter=opt['train']['warmup_iter'])
 
-        #### training
+        # training
         if self._profile:
             print("Update LR: %f" % (time() - _t))
         _t = time()
         self.model.feed_data(train_data, self.current_step)
-        gradient_norms_dict = self.model.optimize_parameters(self.current_step, return_grad_norms=will_log)
-        self.iteration_rate = (time() - _t) # / batch_size
+        gradient_norms_dict = self.model.optimize_parameters(
+            self.current_step, return_grad_norms=will_log)
+        self.iteration_rate = (time() - _t)  # / batch_size
         if self._profile:
             print("Model feed + step: %f" % (time() - _t))
             _t = time()
@@ -249,7 +279,7 @@ class Trainer:
         for s in self.model.steps:
             metrics.update(s.get_metrics())
 
-        #### log
+        # log
         if self.dataset_debugger is not None:
             self.dataset_debugger.update(train_data)
         if will_log:
@@ -264,7 +294,7 @@ class Trainer:
                 'lr': self.model.get_current_learning_rate(),
             }
             logs.update(current_model_logs)
-            
+
             if self.dataset_debugger is not None:
                 logs.update(self.dataset_debugger.get_debugging_map())
 
@@ -309,7 +339,7 @@ class Trainer:
             self.logger.info(message)
             """
 
-        #### save models and training states
+        # save models and training states
         if self.current_step > 0 and self.current_step % opt['logger']['save_checkpoint_freq'] == 0:
             self.model.consolidate_state()
             if self.rank <= 0:
@@ -340,24 +370,27 @@ class Trainer:
             self.logger.info('Beginning validation.')
 
         metrics = []
-        tq_ldr = tqdm(self.val_loader, desc="Validating") if self.use_tqdm else self.val_loader
+        tq_ldr = tqdm(self.val_loader,
+                      desc="Validating") if self.use_tqdm else self.val_loader
 
         for val_data in tq_ldr:
-            self.model.feed_data(val_data, self.current_step, perform_micro_batching=False)
+            self.model.feed_data(val_data, self.current_step,
+                                 perform_micro_batching=False)
             metric = self.model.test()
             metrics.append(metric)
             if self.rank <= 0 and self.use_tqdm:
-                logs = process_metrics( metrics )
-                tq_ldr.set_postfix( logs, refresh=True )
+                logs = process_metrics(metrics)
+                tq_ldr.set_postfix(logs, refresh=True)
 
         if self.rank <= 0:
-            logs = process_metrics( metrics )
+            logs = process_metrics(metrics)
             logs['it'] = self.current_step
             self.logger.info(f'Validation Metrics: {json.dumps(logs)}')
 
     def do_training(self):
         if self.rank <= 0:
-            self.logger.info('Start training from epoch: {:d}, iter: {:d}'.format(self.start_epoch, self.current_step))
+            self.logger.info('Start training from epoch: {:d}, iter: {:d}'.format(
+                self.start_epoch, self.current_step))
 
         for epoch in range(self.start_epoch, self.total_epochs + 1):
             self.epoch = epoch
@@ -365,7 +398,8 @@ class Trainer:
                 self.train_sampler.set_epoch(epoch)
 
             metrics = []
-            tq_ldr = tqdm(self.train_loader, desc="Training") if self.use_tqdm else self.train_loader
+            tq_ldr = tqdm(
+                self.train_loader, desc="Training") if self.use_tqdm else self.train_loader
 
             _t = time()
             step = 0
@@ -374,10 +408,10 @@ class Trainer:
                 metric = self.do_step(train_data)
                 metrics.append(metric)
                 if self.rank <= 0:
-                    logs = process_metrics( metrics )
+                    logs = process_metrics(metrics)
                     logs['lr'] = self.model.get_current_learning_rate()[0]
                     if self.use_tqdm:
-                        tq_ldr.set_postfix( logs, refresh=True )
+                        tq_ldr.set_postfix(logs, refresh=True)
                     logs['it'] = self.current_step
                     logs['step'] = step
                     logs['steps'] = len(self.train_loader)
@@ -390,12 +424,13 @@ class Trainer:
             self.logger.info('Finished training!')
 
     def create_training_generator(self, index):
-        self.logger.info('Start training from epoch: {:d}, iter: {:d}'.format(self.start_epoch, self.current_step))
+        self.logger.info('Start training from epoch: {:d}, iter: {:d}'.format(
+            self.start_epoch, self.current_step))
         for epoch in range(self.start_epoch, self.total_epochs + 1):
             self.epoch = epoch
             if self.opt['dist']:
                 self.train_sampler.set_epoch(epoch)
-            
+
             tq_ldr = tqdm(self.train_loader, position=index)
             tq_ldr.set_description('Training')
 
@@ -406,11 +441,15 @@ class Trainer:
         self.save()
         self.logger.info('Finished training')
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--launcher', choices=['none', 'pytorch'], default='none', help='job launcher')
-    parser.add_argument('--mode', type=str, default='', help='Handles printing info')
-    parser.add_argument('-opt', type=str, help='Path to option YAML file.', default='../options/train_vit_latent.yml')
+    parser.add_argument(
+        '--launcher', choices=['none', 'pytorch'], default='none', help='job launcher')
+    parser.add_argument('--mode', type=str, default='',
+                        help='Handles printing info')
+    parser.add_argument('-opt', type=str, help='Path to option YAML file.',
+                        default='../options/train_vit_latent.yml')
     args = parser.parse_args()
     opt = option.parse(args.opt, is_train=True)
 
@@ -423,7 +462,7 @@ if __name__ == '__main__':
 
     trainer = Trainer()
 
-    #### distributed training settings
+    # distributed training settings
     if args.launcher == 'none':  # disabled distributed training
         opt['dist'] = False
         trainer.rank = -1

@@ -1,5 +1,7 @@
 import math
+
 from matplotlib import pyplot as plt
+
 
 # Base class for weight schedulers. Holds weight at a fixed initial value.
 class WeightScheduler:
@@ -16,7 +18,8 @@ class LinearDecayWeightScheduler(WeightScheduler):
         self.steps_to_decay = steps_to_decay
         self.lower_bound = lower_bound
         self.initial_step = initial_step
-        self.decrease_per_step = (initial_weight - lower_bound) / self.steps_to_decay
+        self.decrease_per_step = (
+            initial_weight - lower_bound) / self.steps_to_decay
 
     def get_weight_for_step(self, step):
         step = step - self.initial_step
@@ -54,7 +57,7 @@ def get_scheduler_for_opt(opt):
 
 # Do some testing.
 if __name__ == "__main__":
-    #sched = SinusoidalWeightScheduler(1, .1, 50, 10)
+    # sched = SinusoidalWeightScheduler(1, .1, 50, 10)
     sched = LinearDecayWeightScheduler(10, 5000, .9, 2000)
 
     x = []

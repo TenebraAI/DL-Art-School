@@ -1,14 +1,15 @@
 # A copy of the cifar dataset from torch which also returns coarse labels.
 
-from PIL import Image
 import os
 import os.path
-import numpy as np
 import pickle
 from typing import Any, Callable, Optional, Tuple
 
+import numpy as np
+from PIL import Image
 from torchvision.datasets import VisionDataset
-from torchvision.datasets.utils import check_integrity, download_and_extract_archive
+from torchvision.datasets.utils import (check_integrity,
+                                        download_and_extract_archive)
 
 
 class CIFAR10(VisionDataset):
@@ -104,7 +105,8 @@ class CIFAR10(VisionDataset):
         with open(path, 'rb') as infile:
             data = pickle.load(infile, encoding='latin1')
             self.classes = data[self.meta['key']]
-        self.class_to_idx = {_class: i for i, _class in enumerate(self.classes)}
+        self.class_to_idx = {_class: i for i,
+                             _class in enumerate(self.classes)}
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         """
@@ -147,7 +149,8 @@ class CIFAR10(VisionDataset):
         if self._check_integrity():
             print('Files already downloaded and verified')
             return
-        download_and_extract_archive(self.url, self.root, filename=self.filename, md5=self.tgz_md5)
+        download_and_extract_archive(
+            self.url, self.root, filename=self.filename, md5=self.tgz_md5)
 
     def extra_repr(self) -> str:
         return "Split: {}".format("Train" if self.train is True else "Test")

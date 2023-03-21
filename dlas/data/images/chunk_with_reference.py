@@ -1,17 +1,19 @@
 import os.path as osp
-from data import util
-import torch
-import numpy as np
 
+import numpy as np
+import torch
+
+from dlas.data import util
 # Iterable that reads all the images in a directory that contains a reference image, tile images and center coordinates.
-from utils.util import opt_get
+from dlas.utils.util import opt_get
 
 
 class ChunkWithReference:
     def __init__(self, opt, path):
         self.path = path.path
         self.tiles, _ = util.find_files_of_type('img', self.path)
-        self.need_metadata = opt_get(opt, ['strict'], False) or opt_get(opt, ['needs_metadata'], False)
+        self.need_metadata = opt_get(opt, ['strict'], False) or opt_get(
+            opt, ['needs_metadata'], False)
         self.need_ref = opt_get(opt, ['need_ref'], False)
         if 'ignore_first' in opt.keys():
             self.tiles = self.tiles[opt['ignore_first']:]
@@ -41,12 +43,14 @@ class ChunkWithReference:
             else:
                 center = torch.tensor([128, 128], dtype=torch.long)
                 tile_width = 256
-            mask = np.full(tile.shape[:2] + (1,), fill_value=.1, dtype=tile.dtype)
-            mask[center[0] - tile_width // 2:center[0] + tile_width // 2, center[1] - tile_width // 2:center[1] + tile_width // 2] = 1
+            mask = np.full(tile.shape[:2] + (1,),
+                           fill_value=.1, dtype=tile.dtype)
+            mask[center[0] - tile_width // 2:center[0] + tile_width // 2,
+                 center[1] - tile_width // 2:center[1] + tile_width // 2] = 1
         else:
             ref = np.zeros_like(tile)
             mask = np.zeros(tile.shape[:2] + (1,))
-            center = (0,0)
+            center = (0, 0)
 
         return tile, ref, center, mask, self.tiles[item]
 
